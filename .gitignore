@@ -1,0 +1,4 @@
+backend/server.exe
+node_modules/
+.next/
+backend/.env
