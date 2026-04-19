@@ -13,6 +13,7 @@ type ProductRepository interface {
 	Update(product *model.Product) error
 	Delete(id string) error
 	AdjustStock(productID string, newQuantity int, adminID string, note string) error
+	FindAllCategories() ([]model.Category, error)
 }
 
 type productRepository struct {
@@ -111,10 +112,12 @@ func (r *productRepository) AdjustStock(productID string, newQuantity int, admin
 			Note:          note,
 		}
 		
-		if err := tx.Create(&sm).Error; err != nil {
-			return err
-		}
-
 		return nil
 	})
+}
+
+func (r *productRepository) FindAllCategories() ([]model.Category, error) {
+	var categories []model.Category
+	err := r.db.Order("sort_order asc").Find(&categories).Error
+	return categories, err
 }

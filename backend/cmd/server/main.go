@@ -9,6 +9,7 @@ import (
 	
 	"orchidmart-backend/internal/config"
 	"orchidmart-backend/internal/handler"
+	"orchidmart-backend/internal/middleware"
 	"orchidmart-backend/internal/pkg/midtrans"
 	"orchidmart-backend/internal/repository"
 	"orchidmart-backend/internal/service"
@@ -67,6 +68,7 @@ func main() {
 		{
 			productRoutes.GET("", productHandler.GetAllProducts)
 			productRoutes.GET("/:id", productHandler.GetProductByID)
+			productRoutes.GET("/categories", productHandler.GetAllCategories) // NEW
 
 			// In a real application, these should be protected by an Admin Middleware
 			productRoutes.POST("", productHandler.CreateProduct)
@@ -75,6 +77,8 @@ func main() {
 			productRoutes.POST("/:id/adjust-stock", productHandler.AdjustStock)
 		}
 
+		// ... (keep existing shipping and webhooks)
+
 		shippingRoutes := api.Group("/shipping")
 		{
 			shippingRoutes.GET("/provinces", shippingHandler.GetProvinces)
@@ -82,31 +86,40 @@ func main() {
 			shippingRoutes.POST("/cost", shippingHandler.GetCost)
 		}
 
+		api.GET("/categories", productHandler.GetAllCategories) // ALSO AT ROOT level as requested by frontend
+
 		// Webhooks (Unprotected)
 		webhooks := api.Group("/webhooks")
 		{
 			webhooks.POST("/midtrans", orderHandler.WebhookMidtrans)
 		}
 
-		// Protected Routes
-		// In a real application, you would attach the AuthMiddleware here
-		// Example: protected := api.Group("/", middleware.AuthMiddleware())
-		cartRoutes := api.Group("/cart") // attach middleware
+		// Protected Routes (requires JWT token)
+		cartRoutes := api.Group("/cart", middleware.AuthMiddleware())
 		{
 			cartRoutes.GET("", cartHandler.GetCart)
 			cartRoutes.POST("", cartHandler.AddToCart)
 			cartRoutes.DELETE("/:id", cartHandler.RemoveFromCart)
 		}
 
-		orderRoutes := api.Group("/orders") // attach middleware
+		orderRoutes := api.Group("/orders", middleware.AuthMiddleware())
 		{
+			orderRoutes.GET("", orderHandler.GetUserOrders)
+			orderRoutes.GET("/:id", orderHandler.GetOrderByID)
 			orderRoutes.POST("/checkout", orderHandler.Checkout)
+			orderRoutes.POST("/:id/confirm-delivery", orderHandler.ConfirmDelivery)
 		}
 
 		adminHandler := handler.NewAdminHandler(config.DB)
 		adminRoutes := api.Group("/admin") // attach admin privilege middleware
 		{
 			adminRoutes.GET("/kpi", adminHandler.GetKPI)
+			adminRoutes.GET("/orders", adminHandler.GetOrders)
+			adminRoutes.PUT("/orders/:id/status", adminHandler.UpdateOrderStatus)
+			adminRoutes.PUT("/orders/:id/tracking", adminHandler.UpdateOrderTracking)
+			adminRoutes.GET("/customers", adminHandler.GetCustomers)
+			adminRoutes.GET("/customers/:id", adminHandler.GetCustomerByID)
+			adminRoutes.GET("/inventory/movements", adminHandler.GetMovements) // UPDATED
 		}
 	}
 

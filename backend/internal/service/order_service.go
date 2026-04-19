@@ -18,6 +18,8 @@ import (
 type OrderService interface {
 	Checkout(userID string, req request.CheckoutRequest) (*model.Order, string, error)
 	GetOrders(userID string) ([]model.Order, error)
+	GetOrderByID(orderID string) (*model.Order, error)
+	UpdateOrderStatus(orderID string, status string) error
 	HandleMidtransWebhook(payload map[string]interface{}) error
 }
 
@@ -114,6 +116,14 @@ func (s *orderService) Checkout(userID string, req request.CheckoutRequest) (*mo
 
 func (s *orderService) GetOrders(userID string) ([]model.Order, error) {
 	return s.orderRepo.GetOrdersByUserID(userID)
+}
+
+func (s *orderService) GetOrderByID(orderID string) (*model.Order, error) {
+	return s.orderRepo.GetOrderByID(orderID)
+}
+
+func (s *orderService) UpdateOrderStatus(orderID string, status string) error {
+	return s.orderRepo.UpdateOrderStatus(orderID, status)
 }
 
 func (s *orderService) HandleMidtransWebhook(payload map[string]interface{}) error {

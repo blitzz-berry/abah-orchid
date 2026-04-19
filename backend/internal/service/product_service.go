@@ -12,6 +12,7 @@ type ProductService interface {
 	UpdateProduct(product *model.Product) error
 	DeleteProduct(id string) error
 	AdjustStock(productID string, newQuantity int, adminID string, note string) error
+	GetAllCategories() ([]model.Category, error)
 }
 
 type productService struct {
@@ -44,4 +45,8 @@ func (s *productService) DeleteProduct(id string) error {
 
 func (s *productService) AdjustStock(productID string, newQuantity int, adminID string, note string) error {
 	return s.productRepo.AdjustStock(productID, newQuantity, adminID, note)
+}
+
+func (s *productService) GetAllCategories() ([]model.Category, error) {
+	return s.productRepo.FindAllCategories()
 }

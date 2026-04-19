@@ -48,8 +48,11 @@ func AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		c.Set("userID", claims["sub"])
-		c.Set("userRole", claims["role"])
+		// Cast to string explicitly — c.GetString() only works with Go string type
+		sub, _ := claims["sub"].(string)
+		role, _ := claims["role"].(string)
+		c.Set("userID", sub)
+		c.Set("userRole", role)
 
 		c.Next()
 	}

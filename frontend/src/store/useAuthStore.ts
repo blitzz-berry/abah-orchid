@@ -1,17 +1,12 @@
 import { create } from 'zustand';
-
-interface User {
-  id: string;
-  email: string;
-  full_name: string;
-  role: string;
-}
+import type { User } from '@/types';
 
 interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
   login: (user: User, token: string) => void;
   logout: () => void;
+  hydrate: () => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -30,5 +25,19 @@ export const useAuthStore = create<AuthState>((set) => ({
       localStorage.removeItem('user');
     }
     set({ user: null, isAuthenticated: false });
+  },
+  hydrate: () => {
+    if (typeof window !== 'undefined') {
+      const token = localStorage.getItem('access_token');
+      const userStr = localStorage.getItem('user');
+      if (token && userStr) {
+        try {
+          const user = JSON.parse(userStr) as User;
+          set({ user, isAuthenticated: true });
+        } catch {
+          set({ user: null, isAuthenticated: false });
+        }
+      }
+    }
   },
 }));

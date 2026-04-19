@@ -126,3 +126,16 @@ func (h *ProductHandler) AdjustStock(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "Stock adjusted successfully"})
 }
+
+func (h *ProductHandler) GetAllCategories(c *gin.Context) {
+	categories, err := h.productService.GetAllCategories()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch categories"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Categories fetched successfully",
+		"data":    categories,
+	})
+}
