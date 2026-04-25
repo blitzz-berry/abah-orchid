@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Leaf, ShoppingBag, User, LogOut, Menu, X, Search } from "lucide-react";
+import { ShoppingBag, User, LogOut, Menu, X, Heart } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -25,8 +25,10 @@ export default function Navbar() {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2 shrink-0">
-            <Leaf className="w-7 h-7 text-[var(--color-leaf-500)]" />
-            <span className="text-xl font-bold tracking-tight">OrchidMart</span>
+            <img src="/images/anggrek.png" alt="Logo" className="w-8 h-8 object-contain" />
+            <span className="text-xl font-bold tracking-tight">
+              Abah<span className="text-[var(--color-leaf-600)]">Orchid</span>
+            </span>
           </Link>
 
           {/* Desktop Nav Links */}
@@ -69,6 +71,12 @@ export default function Navbar() {
 
             {isAuthenticated ? (
               <div className="hidden md:flex items-center gap-2">
+                <Link
+                  href="/wishlist"
+                  className="p-2.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl transition-colors relative"
+                >
+                  <Heart className="w-5 h-5" />
+                </Link>
                 <Link
                   href="/profile"
                   className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
@@ -134,6 +142,13 @@ export default function Navbar() {
               ))}
               {isAuthenticated ? (
                 <>
+                  <Link
+                    href="/wishlist"
+                    onClick={() => setMobileOpen(false)}
+                    className="px-4 py-3 rounded-xl text-sm font-medium hover:bg-black/5 dark:hover:bg-white/5 flex items-center gap-2"
+                  >
+                    <Heart className="w-4 h-4" /> Wishlist
+                  </Link>
                   <Link
                     href="/profile"
                     onClick={() => setMobileOpen(false)}

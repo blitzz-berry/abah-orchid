@@ -1,103 +1,334 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Leaf, Trash2, CreditCard, Truck, MapPin, Minus, Plus, ArrowRight } from "lucide-react";
+import { Leaf, Trash2, CreditCard, Truck, MapPin, Minus, Plus, ArrowRight, CheckCircle2 } from "lucide-react";
 import api from "@/lib/api";
 import { motion } from "framer-motion";
 import { useAuthStore } from "@/store/useAuthStore";
 import Navbar from "@/components/ui/Navbar";
 import Footer from "@/components/ui/Footer";
+import type { Address, Cart } from "@/types";
+
+type ProvinceOption = {
+  province_id: string;
+  province: string;
+};
+
+type CityOption = {
+  city_id: string;
+  city_name: string;
+  postal_code: string;
+  type: string;
+};
+
+type ShippingCostOption = {
+  service: string;
+  description: string;
+  cost: Array<{
+    value: number;
+    etd: string;
+  }>;
+};
+
+const readRajaResults = <T,>(payload: unknown): T[] => {
+  const data = payload as { rajaongkir?: { results?: T[] }; data?: T[] };
+  if (Array.isArray(data.rajaongkir?.results)) return data.rajaongkir.results;
+  if (Array.isArray(data.data)) return data.data;
+  return [];
+};
+
+const readRajaCosts = (payload: unknown): ShippingCostOption[] => {
+  const results = readRajaResults<{ costs?: ShippingCostOption[] }>(payload);
+  return results[0]?.costs ?? [];
+};
+
+type CheckoutForm = {
+  shipping_name: string;
+  shipping_phone: string;
+  shipping_address: string;
+  province_id: string;
+  city_id: string;
+  courier: string;
+  courier_service: string;
+  shipping_cost: number;
+  shipping_insurance: boolean;
+  insurance_cost: number;
+  packing_type: string;
+  packing_cost: number;
+  live_plant_note: string;
+  coupon_code: string;
+  payment_method: string;
+  note: string;
+};
+
+const paymentMethods = [
+  {
+    value: "manual_bank_transfer",
+    title: "Transfer Bank Manual",
+    description: "Transfer BCA/BNI/BRI/Mandiri lalu upload bukti. Admin konfirmasi pembayaran.",
+  },
+  {
+    value: "midtrans_bank_transfer",
+    title: "Virtual Account",
+    description: "VA bank via Midtrans: BCA, BNI, BRI, Mandiri/Permata.",
+  },
+  {
+    value: "midtrans_ewallet",
+    title: "E-Wallet",
+    description: "Bayar lewat GoPay atau ShopeePay via Midtrans.",
+  },
+  {
+    value: "midtrans_card",
+    title: "Kartu Kredit/Debit",
+    description: "Kartu Visa/Mastercard via Midtrans Snap.",
+  },
+  {
+    value: "cod",
+    title: "COD",
+    description: "Bayar saat barang diterima. Berlaku untuk area tertentu.",
+  },
+];
+
+const emptyForm: CheckoutForm = {
+  shipping_name: "",
+  shipping_phone: "",
+  shipping_address: "",
+  province_id: "",
+  city_id: "",
+  courier: "",
+  courier_service: "",
+  shipping_cost: 0,
+  shipping_insurance: false,
+  insurance_cost: 0,
+  packing_type: "standard",
+  packing_cost: 0,
+  live_plant_note: "",
+  coupon_code: "",
+  payment_method: "manual_bank_transfer",
+  note: "",
+};
 
 export default function CartPage() {
-  const [cart, setCart] = useState<any>(null);
+  const [cart, setCart] = useState<Cart | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const router = useRouter();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
-  const [provinces, setProvinces] = useState<any[]>([]);
-  const [cities, setCities] = useState<any[]>([]);
-  const [shippingCosts, setShippingCosts] = useState<any[]>([]);
+  const [addresses, setAddresses] = useState<Address[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState("");
+  const [provinces, setProvinces] = useState<ProvinceOption[]>([]);
+  const [cities, setCities] = useState<CityOption[]>([]);
+  const [shippingCosts, setShippingCosts] = useState<ShippingCostOption[]>([]);
   const [isCalcShipping, setIsCalcShipping] = useState(false);
-
-  const [formData, setFormData] = useState({
-    shipping_name: "", shipping_phone: "", shipping_address: "",
-    province_id: "", city_id: "", courier: "", shipping_cost: 0, note: "",
-  });
+  const [formData, setFormData] = useState<CheckoutForm>(emptyForm);
+  const cartItems = useMemo(() => cart?.items ?? [], [cart]);
+  const hasCartItems = cartItems.length > 0;
 
   useEffect(() => {
-    if (!isAuthenticated) { router.push("/login"); return; }
+    if (!isAuthenticated) {
+      router.push("/login");
+      return;
+    }
+
     const fetchData = async () => {
       try {
-        const [cartRes, provRes] = await Promise.allSettled([api.get("/cart"), api.get("/shipping/provinces")]);
-        if (cartRes.status === "fulfilled") setCart(cartRes.value.data.data);
-        if (provRes.status === "fulfilled") setProvinces(provRes.value.data?.rajaongkir?.results || []);
-      } catch {} finally { setIsLoading(false); }
+        const [cartRes, provRes, addressRes] = await Promise.allSettled([
+          api.get("/cart"),
+          api.get("/shipping/provinces"),
+          api.get("/addresses"),
+        ]);
+
+        if (cartRes.status === "fulfilled") {
+          const nextCart = cartRes.value.data?.data;
+          setCart(nextCart ? { ...nextCart, items: nextCart.items ?? [] } : null);
+        }
+
+        if (provRes.status === "fulfilled") {
+          setProvinces(readRajaResults<ProvinceOption>(provRes.value.data));
+        }
+
+        if (addressRes.status === "fulfilled") {
+          const savedAddresses = addressRes.value.data.data || [];
+          setAddresses(savedAddresses);
+          const defaultAddress = savedAddresses.find((address: Address) => address.is_default) || savedAddresses[0];
+          if (defaultAddress) {
+            setSelectedAddressId(defaultAddress.id);
+          }
+        }
+      } finally {
+        setIsLoading(false);
+      }
     };
-    fetchData();
+
+    void fetchData();
   }, [isAuthenticated, router]);
 
+  const selectedAddress = useMemo(
+    () => addresses.find((address) => address.id === selectedAddressId) || null,
+    [addresses, selectedAddressId],
+  );
+
   useEffect(() => {
-    if (!formData.province_id) return;
-    const f = async () => { try { const r = await api.get(`/shipping/cities?province=${formData.province_id}`); setCities(r.data?.rajaongkir?.results || []); } catch {} };
-    f();
-  }, [formData.province_id]);
+    if (!selectedAddress) return;
+
+    const matchedProvince = provinces.find((province) =>
+      province.province_id === selectedAddress.province_id ||
+      province.province.toLowerCase() === selectedAddress.province.toLowerCase(),
+    );
+
+    setFormData((prev) => ({
+      ...prev,
+      shipping_name: selectedAddress.recipient_name,
+      shipping_phone: selectedAddress.phone,
+      shipping_address: selectedAddress.full_address,
+      province_id: matchedProvince?.province_id || selectedAddress.province_id || "",
+      city_id: "",
+      shipping_cost: 0,
+      courier_service: "",
+    }));
+    setShippingCosts([]);
+  }, [provinces, selectedAddress]);
+
+  useEffect(() => {
+    if (!formData.province_id) {
+      setCities([]);
+      return;
+    }
+
+    const fetchCities = async () => {
+      try {
+        const response = await api.get(`/shipping/cities/${formData.province_id}`);
+        const nextCities = readRajaResults<CityOption>(response.data);
+        setCities(nextCities);
+
+        if (!selectedAddress) return;
+        const matchedCity = nextCities.find((city: CityOption) =>
+          city.city_id === selectedAddress.city_id ||
+          city.city_name.toLowerCase() === selectedAddress.city.toLowerCase(),
+        );
+        if (matchedCity) {
+          setFormData((prev) => ({
+            ...prev,
+            city_id: matchedCity.city_id,
+          }));
+        }
+      } catch {
+        setCities([]);
+      }
+    };
+
+    void fetchCities();
+  }, [formData.province_id, selectedAddress]);
 
   useEffect(() => {
     if (!formData.city_id || !formData.courier) return;
-    const w = cart?.items?.reduce((a: number, i: any) => a + (i.quantity * 1000), 0) || 1000;
-    const f = async () => {
+
+    const totalWeight = cartItems.reduce((accumulator, item) => accumulator + item.quantity * 1000, 0) || 1000;
+
+    const fetchShippingCost = async () => {
       setIsCalcShipping(true);
       try {
-        const r = await api.post("/shipping/cost", { origin: "152", destination: formData.city_id, weight: w, courier: formData.courier });
-        const costs = r.data?.rajaongkir?.results?.[0]?.costs || [];
+        const response = await api.post("/shipping/cost", {
+          origin: "152",
+          destination: formData.city_id,
+          weight: totalWeight,
+          courier: formData.courier,
+        });
+        const costs = readRajaCosts(response.data);
         setShippingCosts(costs);
-        if (costs.length > 0) setFormData(p => ({ ...p, shipping_cost: costs[0].cost[0].value }));
-      } catch {} finally { setIsCalcShipping(false); }
+        if (costs.length > 0) {
+          setFormData((prev) => ({
+            ...prev,
+            shipping_cost: costs[0].cost[0].value,
+            courier_service: costs[0].service,
+          }));
+        }
+      } finally {
+        setIsCalcShipping(false);
+      }
     };
-    f();
-  }, [formData.city_id, formData.courier, cart]);
+
+    void fetchShippingCost();
+  }, [cartItems, formData.city_id, formData.courier]);
 
   const handleUpdateQty = async (itemId: string, newQty: number) => {
-    if (newQty < 1) return;
+    if (newQty < 1 || !cart) return;
     try {
-      await api.put(`/cart/${itemId}`, { quantity: newQty });
-      setCart((p: any) => ({ ...p, items: p.items.map((i: any) => i.id === itemId ? { ...i, quantity: newQty } : i) }));
+      await api.put(`/cart/items/${itemId}`, { quantity: newQty });
+      setCart({
+        ...cart,
+        items: cartItems.map((item) => item.id === itemId ? { ...item, quantity: newQty } : item),
+      });
     } catch {}
   };
 
   const handleRemove = async (itemId: string) => {
+    if (!cart) return;
     try {
-      await api.delete(`/cart/${itemId}`);
-      setCart((p: any) => ({ ...p, items: p.items.filter((i: any) => i.id !== itemId) }));
+      await api.delete(`/cart/items/${itemId}`);
+      setCart({
+        ...cart,
+        items: cartItems.filter((item) => item.id !== itemId),
+      });
     } catch {}
   };
 
   const handleCheckout = async () => {
-    if (!formData.city_id || formData.shipping_cost === 0) { alert("Harap lengkapi alamat dan ekspedisi!"); return; }
-    if (!formData.shipping_name || !formData.shipping_phone || !formData.shipping_address) { alert("Harap isi nama, telepon, dan alamat penerima!"); return; }
+    if (!formData.city_id || formData.shipping_cost === 0 || !formData.courier_service) {
+      alert("Harap lengkapi alamat, ekspedisi, dan layanan pengiriman.");
+      return;
+    }
+    if (!formData.shipping_name || !formData.shipping_phone || !formData.shipping_address) {
+      alert("Harap isi nama, telepon, dan alamat penerima.");
+      return;
+    }
+
     setIsCheckingOut(true);
     try {
-      const selProv = provinces.find(p => p.province_id === formData.province_id);
-      const selCity = cities.find(c => c.city_id === formData.city_id);
-      const res = await api.post("/orders/checkout", {
-        shipping_name: formData.shipping_name, shipping_phone: formData.shipping_phone,
-        shipping_address: formData.shipping_address, shipping_city: selCity?.city_name || "",
-        shipping_province: selProv?.province || "", shipping_postal_code: selCity?.postal_code || "00000",
-        courier_code: formData.courier, courier_service: "REG", shipping_cost: formData.shipping_cost, note: formData.note,
+      const selectedProvince = provinces.find((province) => province.province_id === formData.province_id);
+      const selectedCity = cities.find((city) => city.city_id === formData.city_id);
+
+      const response = await api.post("/orders", {
+        shipping_name: formData.shipping_name,
+        shipping_phone: formData.shipping_phone,
+        shipping_address: formData.shipping_address,
+        shipping_city: selectedCity?.city_name || "",
+        shipping_province: selectedProvince?.province || "",
+        shipping_postal_code: selectedCity?.postal_code || "00000",
+        courier_code: formData.courier,
+        courier_service: formData.courier_service,
+        shipping_cost: formData.shipping_cost,
+        shipping_insurance: formData.shipping_insurance,
+        insurance_cost: formData.insurance_cost,
+        packing_type: formData.packing_type,
+        packing_cost: formData.packing_cost,
+        live_plant_note: formData.live_plant_note,
+        coupon_code: formData.coupon_code,
+        payment_method: formData.payment_method,
+        note: formData.note,
       });
-      if (res.data.payment_url) window.location.href = res.data.payment_url;
-      else router.push("/orders");
+
+      if (response.data.payment_url) {
+        window.location.href = response.data.payment_url;
+      } else {
+        const createdOrder = response.data.data;
+        router.push(createdOrder?.id ? `/orders/${createdOrder.id}` : "/orders");
+      }
     } catch (e: any) {
       alert("Checkout gagal: " + (e.response?.data?.error || e.message));
-    } finally { setIsCheckingOut(false); }
+    } finally {
+      setIsCheckingOut(false);
+    }
   };
 
-  const sub = cart?.items?.reduce((a: number, i: any) => a + (i.product.price * i.quantity), 0) || 0;
-  const total = sub + formData.shipping_cost;
-  const setF = (k: string, v: any) => setFormData(p => ({ ...p, [k]: v }));
+  const subtotal = cartItems.reduce((accumulator, item) => accumulator + item.product.price * item.quantity, 0) || 0;
+  const total = subtotal + formData.shipping_cost + formData.insurance_cost + formData.packing_cost;
+  const setField = <K extends keyof CheckoutForm>(key: K, value: CheckoutForm[K]) => {
+    setFormData((prev) => ({ ...prev, [key]: value }));
+  };
 
   return (
     <div className="flex flex-col min-h-screen bg-[var(--bg)] text-[var(--fg)]">
@@ -107,7 +338,7 @@ export default function CartPage() {
 
         {isLoading ? (
           <div className="flex justify-center py-20"><div className="w-10 h-10 border-4 border-gray-200 border-t-[var(--color-leaf-500)] rounded-full animate-spin" /></div>
-        ) : !cart || !cart.items || cart.items.length === 0 ? (
+        ) : !cart || !hasCartItems ? (
           <div className="text-center py-20 glass rounded-3xl">
             <Leaf className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <h2 className="text-2xl font-bold mb-2">Keranjang Kosong</h2>
@@ -117,9 +348,8 @@ export default function CartPage() {
         ) : (
           <div className="flex flex-col lg:flex-row gap-8">
             <div className="flex-1 flex flex-col gap-6">
-              {/* Cart Items */}
               <div className="flex flex-col gap-3">
-                {cart.items.map((item: any, idx: number) => (
+                {cartItems.map((item, idx) => (
                   <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx * 0.05 }} key={item.id} className="glass p-4 rounded-2xl flex gap-4 items-center">
                     <div className="w-20 h-20 bg-gray-100 dark:bg-gray-800 rounded-xl overflow-hidden shrink-0">
                       <img src={item.product.images?.[0]?.image_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(item.product.name)}&background=random`} alt={item.product.name} className="w-full h-full object-cover" />
@@ -139,45 +369,115 @@ export default function CartPage() {
                 ))}
               </div>
 
-              {/* Shipping Form */}
               <div className="glass p-6 rounded-2xl">
                 <h3 className="text-lg font-bold mb-5 flex items-center gap-2"><MapPin className="w-5 h-5 text-[var(--color-leaf-600)]" /> Pengiriman</h3>
+
+                <div className="mb-5">
+                  <div className="flex items-center justify-between mb-3 gap-4">
+                    <h4 className="font-semibold text-sm">Alamat Tersimpan</h4>
+                    <Link href="/profile" className="text-sm font-medium text-[var(--color-brand-600)] hover:underline">
+                      Kelola Alamat
+                    </Link>
+                  </div>
+                  {addresses.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 p-4 text-sm text-gray-500">
+                      Belum ada alamat tersimpan. Tambahkan alamat di halaman profil atau isi form manual di bawah.
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-3">
+                      {addresses.map((address) => (
+                        <button
+                          key={address.id}
+                          type="button"
+                          onClick={() => setSelectedAddressId(address.id)}
+                          className={`w-full text-left rounded-xl border p-4 transition-colors ${
+                            selectedAddressId === address.id
+                              ? "border-[var(--color-leaf-500)] bg-[var(--color-leaf-50)] dark:bg-[var(--color-leaf-900)]/20"
+                              : "border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-zinc-900"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-bold text-sm">{address.label || "Alamat"}</span>
+                            {address.is_default && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/80 text-[var(--color-leaf-600)]">Default</span>}
+                            {selectedAddressId === address.id && <CheckCircle2 className="w-4 h-4 text-[var(--color-leaf-600)] ml-auto" />}
+                          </div>
+                          <p className="text-sm text-gray-700 dark:text-gray-200">{address.recipient_name} • {address.phone}</p>
+                          <p className="text-sm text-gray-500">{address.full_address}</p>
+                          <p className="text-sm text-gray-500">{address.city}, {address.province} {address.postal_code}</p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><label className="text-sm font-medium mb-1 block">Nama Penerima</label><input value={formData.shipping_name} onChange={e => setF("shipping_name", e.target.value)} className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm" placeholder="Nama lengkap" /></div>
-                  <div><label className="text-sm font-medium mb-1 block">No. Telepon</label><input value={formData.shipping_phone} onChange={e => setF("shipping_phone", e.target.value)} className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm" placeholder="08xxxxxxxxxx" /></div>
-                  <div className="md:col-span-2"><label className="text-sm font-medium mb-1 block">Alamat Lengkap</label><textarea value={formData.shipping_address} onChange={e => setF("shipping_address", e.target.value)} className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm" rows={2} placeholder="Jl., RT/RW, Kel., Kec." /></div>
-                  <div><label className="text-sm font-medium mb-1 block">Provinsi</label><select value={formData.province_id} onChange={e => { setF("province_id", e.target.value); setF("city_id", ""); setF("shipping_cost", 0); setShippingCosts([]); }} className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm"><option value="">Pilih Provinsi</option>{provinces.map(p => <option key={p.province_id} value={p.province_id}>{p.province}</option>)}</select></div>
-                  <div><label className="text-sm font-medium mb-1 block">Kota/Kabupaten</label><select value={formData.city_id} onChange={e => { setF("city_id", e.target.value); setF("shipping_cost", 0); }} disabled={!formData.province_id} className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm disabled:opacity-50"><option value="">Pilih Kota</option>{cities.map(c => <option key={c.city_id} value={c.city_id}>{c.type} {c.city_name}</option>)}</select></div>
+                  <div><label className="text-sm font-medium mb-1 block">Nama Penerima</label><input value={formData.shipping_name} onChange={(e) => setField("shipping_name", e.target.value)} className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm" placeholder="Nama lengkap" /></div>
+                  <div><label className="text-sm font-medium mb-1 block">No. Telepon</label><input value={formData.shipping_phone} onChange={(e) => setField("shipping_phone", e.target.value)} className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm" placeholder="08xxxxxxxxxx" /></div>
+                  <div className="md:col-span-2"><label className="text-sm font-medium mb-1 block">Alamat Lengkap</label><textarea value={formData.shipping_address} onChange={(e) => setField("shipping_address", e.target.value)} className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm" rows={2} placeholder="Jl., RT/RW, Kel., Kec." /></div>
+                  <div><label className="text-sm font-medium mb-1 block">Provinsi</label><select value={formData.province_id} onChange={(e) => { setField("province_id", e.target.value); setField("city_id", ""); setField("shipping_cost", 0); setField("courier_service", ""); setShippingCosts([]); }} className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm"><option value="">Pilih Provinsi</option>{provinces.map((province) => <option key={province.province_id} value={province.province_id}>{province.province}</option>)}</select></div>
+                  <div><label className="text-sm font-medium mb-1 block">Kota/Kabupaten</label><select value={formData.city_id} onChange={(e) => { setField("city_id", e.target.value); setField("shipping_cost", 0); setField("courier_service", ""); }} disabled={!formData.province_id} className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm disabled:opacity-50"><option value="">Pilih Kota</option>{cities.map((city) => <option key={city.city_id} value={city.city_id}>{city.type} {city.city_name}</option>)}</select></div>
                   <div className="md:col-span-2"><label className="text-sm font-medium mb-1 block">Ekspedisi</label>
-                    <div className="flex gap-3">{["jne", "pos", "tiki"].map(c => (<button key={c} onClick={() => setF("courier", c)} className={`flex-1 py-3 border rounded-xl font-bold text-sm uppercase transition-all ${formData.courier === c ? "border-[var(--color-brand-500)] bg-[var(--color-brand-50)] text-[var(--color-brand-600)]" : "border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-zinc-800"}`}>{c}</button>))}</div>
+                    <div className="flex gap-3">{["jne", "pos", "tiki"].map((courier) => (<button key={courier} type="button" onClick={() => setField("courier", courier)} className={`flex-1 py-3 border rounded-xl font-bold text-sm uppercase transition-all ${formData.courier === courier ? "border-[var(--color-brand-500)] bg-[var(--color-brand-50)] text-[var(--color-brand-600)]" : "border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-zinc-800"}`}>{courier}</button>))}</div>
                   </div>
                   {isCalcShipping && <div className="md:col-span-2 text-center text-gray-500 py-2 animate-pulse text-sm">Menghitung ongkir...</div>}
                   {!isCalcShipping && shippingCosts.length > 0 && formData.courier && (
                     <div className="md:col-span-2"><label className="text-sm font-medium mb-2 block">Layanan</label>
-                      <div className="flex flex-col gap-2">{shippingCosts.map((cost: any, i: number) => (
-                        <div key={i} onClick={() => setF("shipping_cost", cost.cost[0].value)} className={`p-3 border rounded-xl flex justify-between cursor-pointer transition-colors text-sm ${formData.shipping_cost === cost.cost[0].value ? "border-[var(--color-leaf-500)] bg-[var(--color-leaf-50)] dark:bg-[var(--color-leaf-900)]/20" : "border-gray-200 dark:border-gray-800"}`}>
+                      <div className="flex flex-col gap-2">{shippingCosts.map((cost) => (
+                        <button key={`${cost.service}-${cost.description}`} type="button" onClick={() => { setField("shipping_cost", cost.cost[0].value); setField("courier_service", cost.service); }} className={`p-3 border rounded-xl flex justify-between cursor-pointer transition-colors text-sm ${formData.shipping_cost === cost.cost[0].value && formData.courier_service === cost.service ? "border-[var(--color-leaf-500)] bg-[var(--color-leaf-50)] dark:bg-[var(--color-leaf-900)]/20" : "border-gray-200 dark:border-gray-800"}`}>
                           <div><div className="font-bold">{cost.service}</div><div className="text-xs text-gray-500">{cost.description} ({cost.cost[0].etd} hari)</div></div>
                           <div className="font-bold text-[var(--color-brand-600)]">Rp {cost.cost[0].value.toLocaleString("id-ID")}</div>
-                        </div>
+                        </button>
                       ))}</div>
                     </div>
                   )}
-                  <div className="md:col-span-2"><label className="text-sm font-medium mb-1 block">Catatan</label><input value={formData.note} onChange={e => setF("note", e.target.value)} className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm" placeholder="Catatan untuk penjual (opsional)" /></div>
+                  <div className="md:col-span-2"><label className="text-sm font-medium mb-1 block">Catatan</label><input value={formData.note} onChange={(e) => setField("note", e.target.value)} className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm" placeholder="Catatan untuk penjual (opsional)" /></div>
+                  <div><label className="text-sm font-medium mb-1 block">Packing</label><select value={formData.packing_type} onChange={(e) => { const premium = e.target.value === "premium"; setField("packing_type", e.target.value); setField("packing_cost", premium ? 15000 : 0); }} className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm"><option value="standard">Standard</option><option value="premium">Premium tanaman hidup (+Rp 15.000)</option></select></div>
+                  <label className="md:col-span-2 flex items-center gap-3 rounded-xl border border-gray-200 dark:border-gray-800 p-3 text-sm"><input type="checkbox" checked={formData.shipping_insurance} onChange={(e) => { setField("shipping_insurance", e.target.checked); setField("insurance_cost", e.target.checked ? Math.ceil(subtotal * 0.005) : 0); }} /> Tambahkan asuransi pengiriman</label>
+                  <div><label className="text-sm font-medium mb-1 block">Kupon</label><input value={formData.coupon_code} onChange={(e) => setField("coupon_code", e.target.value.toUpperCase())} className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm" placeholder="Kode kupon" /></div>
+                  <div><label className="text-sm font-medium mb-1 block">Catatan tanaman hidup</label><input value={formData.live_plant_note} onChange={(e) => setField("live_plant_note", e.target.value)} className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm" placeholder="Instruksi packing/handling" /></div>
+                  <div className="md:col-span-2">
+                    <label className="text-sm font-medium mb-2 block">Metode Pembayaran</label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {paymentMethods.map((method) => (
+                        <button
+                          key={method.value}
+                          type="button"
+                          onClick={() => setField("payment_method", method.value)}
+                          className={`text-left rounded-xl border p-4 transition-colors ${
+                            formData.payment_method === method.value
+                              ? "border-[var(--color-brand-500)] bg-[var(--color-brand-50)] dark:bg-[var(--color-brand-900)]/20"
+                              : "border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-zinc-900"
+                          }`}
+                        >
+                          <div className="font-bold text-sm">{method.title}</div>
+                          <div className="text-xs text-gray-500 mt-1 leading-relaxed">{method.description}</div>
+                        </button>
+                      ))}
+                    </div>
+                    {formData.payment_method === "manual_bank_transfer" && (
+                      <div className="mt-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900 p-4 text-sm text-amber-900 dark:text-amber-100">
+                        Setelah checkout, lu akan diarahkan ke detail pesanan untuk upload bukti transfer. Batas pembayaran 24 jam.
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Summary */}
             <div className="w-full lg:w-[380px]">
               <div className="glass p-6 rounded-2xl sticky top-24">
                 <h2 className="text-lg font-bold mb-4 border-b border-gray-200 dark:border-gray-800 pb-4">Ringkasan</h2>
-                <div className="flex justify-between mb-3 text-sm text-gray-600 dark:text-gray-300"><span>Subtotal ({cart.items.length} item)</span><span>Rp {sub.toLocaleString("id-ID")}</span></div>
+                <div className="flex justify-between mb-3 text-sm text-gray-600 dark:text-gray-300"><span>Subtotal ({cartItems.length} item)</span><span>Rp {subtotal.toLocaleString("id-ID")}</span></div>
                 <div className="flex justify-between mb-3 text-sm text-gray-600 dark:text-gray-300"><span className="flex items-center gap-1"><Truck className="w-4 h-4" /> Ongkir</span><span>Rp {formData.shipping_cost.toLocaleString("id-ID")}</span></div>
+                <div className="flex justify-between mb-3 text-sm text-gray-600 dark:text-gray-300"><span>Packing</span><span>Rp {formData.packing_cost.toLocaleString("id-ID")}</span></div>
+                <div className="flex justify-between mb-3 text-sm text-gray-600 dark:text-gray-300"><span>Asuransi</span><span>Rp {formData.insurance_cost.toLocaleString("id-ID")}</span></div>
                 <div className="flex justify-between mb-6 pb-6 border-b border-gray-200 dark:border-gray-800 font-extrabold text-lg"><span>Total</span><span className="text-[var(--color-leaf-600)]">Rp {total.toLocaleString("id-ID")}</span></div>
-                <button onClick={handleCheckout} disabled={isCheckingOut || formData.shipping_cost === 0} className="w-full bg-black text-white dark:bg-white dark:text-black py-4 rounded-xl flex items-center justify-center gap-2 font-bold hover:scale-[1.02] transition-transform disabled:opacity-50">
+                <button onClick={handleCheckout} disabled={isCheckingOut || formData.shipping_cost === 0 || !formData.courier_service} className="w-full bg-black text-white dark:bg-white dark:text-black py-4 rounded-xl flex items-center justify-center gap-2 font-bold hover:scale-[1.02] transition-transform disabled:opacity-50">
                   <CreditCard className="w-5 h-5" /> {isCheckingOut ? "Memproses..." : "Bayar Sekarang"}
                 </button>
-                <p className="text-xs text-gray-400 text-center mt-3">Pembayaran diproses melalui Midtrans</p>
+                <p className="text-xs text-gray-400 text-center mt-3">
+                  {formData.payment_method.startsWith("midtrans") ? "Pembayaran online diproses melalui Midtrans." : "Pesanan dibuat dengan batas pembayaran 24 jam."}
+                </p>
               </div>
             </div>
           </div>

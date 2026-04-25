@@ -29,55 +29,67 @@ type CartItem struct {
 }
 
 type Order struct {
-	ID                 uuid.UUID      `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
-	OrderNumber        string         `gorm:"type:varchar(50);uniqueIndex;not null" json:"order_number"`
-	UserID             uuid.UUID      `gorm:"type:uuid;index;not null" json:"user_id"`
-	
-	ShippingName       string         `gorm:"type:varchar(255);not null" json:"shipping_name"`
-	ShippingPhone      string         `gorm:"type:varchar(20);not null" json:"shipping_phone"`
-	ShippingAddress    string         `gorm:"type:text;not null" json:"shipping_address"`
-	ShippingCity       string         `gorm:"type:varchar(100);not null" json:"shipping_city"`
-	ShippingProvince   string         `gorm:"type:varchar(100);not null" json:"shipping_province"`
-	ShippingPostalCode string         `gorm:"type:varchar(10);not null" json:"shipping_postal_code"`
-	CourierCode        string         `gorm:"type:varchar(20)" json:"courier_code"`
-	CourierService     string         `gorm:"type:varchar(50)" json:"courier_service"`
-	ShippingCost       float64        `gorm:"type:numeric(12,2)" json:"shipping_cost"`
-	TrackingNumber     string         `gorm:"type:varchar(100)" json:"tracking_number"`
-	
-	Subtotal           float64        `gorm:"type:numeric(12,2);not null" json:"subtotal"`
-	Discount           float64        `gorm:"type:numeric(12,2);default:0" json:"discount"`
-	CouponCode         string         `gorm:"type:varchar(50)" json:"coupon_code"`
-	Total              float64        `gorm:"type:numeric(12,2);not null" json:"total"`
-	Status             string         `gorm:"type:varchar(30);default:'PENDING_PAYMENT';index" json:"status"`
-	Note               string         `gorm:"type:text" json:"note"`
-	AdminNote          string         `gorm:"type:text" json:"admin_note"`
-	
-	PaidAt             *time.Time     `json:"paid_at"`
-	ShippedAt          *time.Time     `json:"shipped_at"`
-	DeliveredAt        *time.Time     `json:"delivered_at"`
-	CompletedAt        *time.Time     `json:"completed_at"`
-	CancelledAt        *time.Time     `json:"cancelled_at"`
-	CreatedAt          time.Time      `gorm:"index" json:"created_at"`
-	UpdatedAt          time.Time      `json:"updated_at"`
-	DeletedAt          gorm.DeletedAt `gorm:"index" json:"-"`
+	ID          uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
+	OrderNumber string    `gorm:"type:varchar(50);uniqueIndex;not null" json:"order_number"`
+	UserID      uuid.UUID `gorm:"type:uuid;index;not null" json:"user_id"`
 
-	Items          []OrderItem          `gorm:"foreignKey:OrderID" json:"items"`
-	StatusHistory  []OrderStatusHistory `gorm:"foreignKey:OrderID" json:"status_history"`
-	Payments       []Payment            `gorm:"foreignKey:OrderID" json:"payments"`
-	User           User                 `gorm:"foreignKey:UserID" json:"user"`
+	ShippingName       string  `gorm:"type:varchar(255);not null" json:"shipping_name"`
+	ShippingPhone      string  `gorm:"type:varchar(20);not null" json:"shipping_phone"`
+	ShippingAddress    string  `gorm:"type:text;not null" json:"shipping_address"`
+	ShippingCity       string  `gorm:"type:varchar(100);not null" json:"shipping_city"`
+	ShippingProvince   string  `gorm:"type:varchar(100);not null" json:"shipping_province"`
+	ShippingPostalCode string  `gorm:"type:varchar(10);not null" json:"shipping_postal_code"`
+	CourierCode        string  `gorm:"type:varchar(20)" json:"courier_code"`
+	CourierService     string  `gorm:"type:varchar(50)" json:"courier_service"`
+	ShippingCost       float64 `gorm:"type:numeric(12,2)" json:"shipping_cost"`
+	TrackingNumber     string  `gorm:"type:varchar(100)" json:"tracking_number"`
+	ShippingInsurance  bool    `gorm:"default:false" json:"shipping_insurance"`
+	InsuranceCost      float64 `gorm:"type:numeric(12,2);default:0" json:"insurance_cost"`
+	PackingType        string  `gorm:"type:varchar(30);default:'standard'" json:"packing_type"`
+	PackingCost        float64 `gorm:"type:numeric(12,2);default:0" json:"packing_cost"`
+	LivePlantNote      string  `gorm:"type:text" json:"live_plant_note"`
+	TrackingStatus     string  `gorm:"type:varchar(100)" json:"tracking_status"`
+	EstimatedDelivery  string  `gorm:"type:varchar(100)" json:"estimated_delivery"`
+	ReturnReason       string  `gorm:"type:text" json:"return_reason"`
+	RefundReason       string  `gorm:"type:text" json:"refund_reason"`
+	RefundAmount       float64 `gorm:"type:numeric(12,2);default:0" json:"refund_amount"`
+
+	Subtotal   float64 `gorm:"type:numeric(12,2);not null" json:"subtotal"`
+	Discount   float64 `gorm:"type:numeric(12,2);default:0" json:"discount"`
+	CouponCode string  `gorm:"type:varchar(50)" json:"coupon_code"`
+	Total      float64 `gorm:"type:numeric(12,2);not null" json:"total"`
+	Status     string  `gorm:"type:varchar(30);default:'PENDING_PAYMENT';index" json:"status"`
+	Note       string  `gorm:"type:text" json:"note"`
+	AdminNote  string  `gorm:"type:text" json:"admin_note"`
+
+	PaidAt            *time.Time     `json:"paid_at"`
+	ShippedAt         *time.Time     `json:"shipped_at"`
+	DeliveredAt       *time.Time     `json:"delivered_at"`
+	CompletedAt       *time.Time     `json:"completed_at"`
+	CancelledAt       *time.Time     `json:"cancelled_at"`
+	ReturnRequestedAt *time.Time     `json:"return_requested_at"`
+	RefundedAt        *time.Time     `json:"refunded_at"`
+	CreatedAt         time.Time      `gorm:"index" json:"created_at"`
+	UpdatedAt         time.Time      `json:"updated_at"`
+	DeletedAt         gorm.DeletedAt `gorm:"index" json:"-"`
+
+	Items         []OrderItem          `gorm:"foreignKey:OrderID" json:"items"`
+	StatusHistory []OrderStatusHistory `gorm:"foreignKey:OrderID" json:"status_history"`
+	Payments      []Payment            `gorm:"foreignKey:OrderID" json:"payments"`
+	User          User                 `gorm:"foreignKey:UserID" json:"user"`
 }
 
 type OrderItem struct {
-	ID               uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
-	OrderID          uuid.UUID `gorm:"type:uuid;index;not null" json:"order_id"`
-	ProductID        uuid.UUID `gorm:"type:uuid;not null" json:"product_id"`
-	ProductName      string    `gorm:"type:varchar(255);not null" json:"product_name"`
-	ProductImageURL  string    `gorm:"type:varchar(500)" json:"product_image_url"`
-	ProductPrice     float64   `gorm:"type:numeric(12,2);not null" json:"product_price"`
-	UnitType         string    `gorm:"type:varchar(20)" json:"unit_type"`
-	Quantity         int       `gorm:"not null" json:"quantity"`
-	Subtotal         float64   `gorm:"type:numeric(12,2);not null" json:"subtotal"`
-	CreatedAt        time.Time `json:"created_at"`
+	ID              uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
+	OrderID         uuid.UUID `gorm:"type:uuid;index;not null" json:"order_id"`
+	ProductID       uuid.UUID `gorm:"type:uuid;not null" json:"product_id"`
+	ProductName     string    `gorm:"type:varchar(255);not null" json:"product_name"`
+	ProductImageURL string    `gorm:"type:varchar(500)" json:"product_image_url"`
+	ProductPrice    float64   `gorm:"type:numeric(12,2);not null" json:"product_price"`
+	UnitType        string    `gorm:"type:varchar(20)" json:"unit_type"`
+	Quantity        int       `gorm:"not null" json:"quantity"`
+	Subtotal        float64   `gorm:"type:numeric(12,2);not null" json:"subtotal"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 type OrderStatusHistory struct {
@@ -91,18 +103,18 @@ type OrderStatusHistory struct {
 }
 
 type Payment struct {
-	ID              uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
-	OrderID         uuid.UUID `gorm:"type:uuid;index;not null" json:"order_id"`
-	Method          string    `gorm:"type:varchar(30);not null" json:"method"`
-	Provider        string    `gorm:"type:varchar(50)" json:"provider"`
-	ExternalID      string    `gorm:"type:varchar(255);index" json:"external_id"`
-	Amount          float64   `gorm:"type:numeric(12,2);not null" json:"amount"`
-	Status          string    `gorm:"type:varchar(20);default:'PENDING';index" json:"status"`
-	PaymentURL      string    `gorm:"type:varchar(500)" json:"payment_url"`
-	ProofImageURL   string    `gorm:"type:varchar(500)" json:"proof_image_url"`
-	FailureReason   string    `gorm:"type:text" json:"failure_reason"`
-	PaidAt          *time.Time `json:"paid_at"`
-	ExpiredAt       *time.Time `json:"expired_at"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID            uuid.UUID  `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
+	OrderID       uuid.UUID  `gorm:"type:uuid;index;not null" json:"order_id"`
+	Method        string     `gorm:"type:varchar(30);not null" json:"method"`
+	Provider      string     `gorm:"type:varchar(50)" json:"provider"`
+	ExternalID    string     `gorm:"type:varchar(255);index" json:"external_id"`
+	Amount        float64    `gorm:"type:numeric(12,2);not null" json:"amount"`
+	Status        string     `gorm:"type:varchar(20);default:'PENDING';index" json:"status"`
+	PaymentURL    string     `gorm:"type:varchar(500)" json:"payment_url"`
+	ProofImageURL string     `gorm:"type:varchar(500)" json:"proof_image_url"`
+	FailureReason string     `gorm:"type:text" json:"failure_reason"`
+	PaidAt        *time.Time `json:"paid_at"`
+	ExpiredAt     *time.Time `json:"expired_at"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import api from "@/lib/api";
-import { Search, Truck, CheckCircle, Clock, Package, XCircle, Eye } from "lucide-react";
+import { Search, Truck, CheckCircle } from "lucide-react";
 import { motion } from "framer-motion";
 
 const STATUSES = ["", "PENDING_PAYMENT", "PAID", "PROCESSING", "SHIPPED", "DELIVERED", "COMPLETED", "CANCELLED"];
@@ -70,6 +70,7 @@ export default function AdminOrdersPage() {
                   <td className="p-4"><div className="flex gap-1.5 justify-end">
                     {o.status === "PAID" && <button onClick={() => handleUpdateStatus(o.id, "PROCESSING")} className="text-xs px-3 py-1.5 bg-purple-50 text-purple-600 rounded-lg font-bold hover:bg-purple-100">Proses</button>}
                     {o.status === "PROCESSING" && <button onClick={() => { setSelected(o); setTrackingInput(""); }} className="text-xs px-3 py-1.5 bg-cyan-50 text-cyan-600 rounded-lg font-bold hover:bg-cyan-100 flex items-center gap-1"><Truck className="w-3 h-3" /> Resi</button>}
+                    {o.status === "SHIPPED" && <button onClick={() => handleUpdateStatus(o.id, "DELIVERED")} className="text-xs px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-lg font-bold hover:bg-emerald-100">Tandai Diterima</button>}
                     {o.status === "PENDING_PAYMENT" && <button onClick={() => handleUpdateStatus(o.id, "PAID")} className="text-xs px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-lg font-bold hover:bg-emerald-100"><CheckCircle className="w-3 h-3 inline mr-1" />Konfirmasi</button>}
                   </div></td>
                 </motion.tr>

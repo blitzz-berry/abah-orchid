@@ -1,14 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   Package,
   ShoppingCart,
   Warehouse,
   Users,
-  BarChart3,
   LogOut,
   Leaf,
   ChevronRight,
@@ -16,7 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const sidebarLinks = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
@@ -28,13 +27,28 @@ const sidebarLinks = [
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { logout } = useAuthStore();
+  const router = useRouter();
+  const { user, isAuthenticated, logout } = useAuthStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.replace("/login");
+      return
+    }
+    if (user?.role !== "admin") {
+      router.replace("/");
+    }
+  }, [isAuthenticated, router, user]);
 
   const isActive = (href: string) => {
     if (href === "/admin") return pathname === "/admin";
     return pathname.startsWith(href);
   };
+
+  if (!isAuthenticated || user?.role !== "admin") {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 flex">
@@ -108,7 +122,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             Ke Storefront
           </Link>
           <button
-            onClick={logout}
+            onClick={() => {
+              logout();
+              router.replace("/login");
+            }}
             className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors w-full text-left"
           >
             <LogOut className="w-5 h-5" />

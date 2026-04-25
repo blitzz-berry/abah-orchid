@@ -8,7 +8,9 @@ import (
 type CartService interface {
 	GetCart(userID string) (*model.Cart, error)
 	AddToCart(userID string, cartItem *model.CartItem) error
+	UpdateCartItemQuantity(userID, cartItemID string, quantity int) error
 	RemoveFromCart(userID, cartItemID string) error
+	ClearCart(userID string) error
 }
 
 type cartService struct {
@@ -32,7 +34,18 @@ func (s *cartService) AddToCart(userID string, cartItem *model.CartItem) error {
 	return s.cartRepo.AddToCart(cartItem)
 }
 
+func (s *cartService) UpdateCartItemQuantity(userID, cartItemID string, quantity int) error {
+	return s.cartRepo.UpdateCartItemQuantity(userID, cartItemID, quantity)
+}
+
 func (s *cartService) RemoveFromCart(userID, cartItemID string) error {
-	// Usually validate if item belongs to user's cart, skipped for brevity
-	return s.cartRepo.RemoveFromCart(cartItemID)
+	return s.cartRepo.RemoveFromCart(userID, cartItemID)
+}
+
+func (s *cartService) ClearCart(userID string) error {
+	cart, err := s.cartRepo.GetCartByUserID(userID)
+	if err != nil {
+		return err
+	}
+	return s.cartRepo.ClearCart(cart.ID.String())
 }

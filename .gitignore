@@ -2,3 +2,6 @@ backend/server.exe
 node_modules/
 .next/
 backend/.env
+.env.production
+.env.local
+uploads/

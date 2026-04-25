@@ -7,6 +7,7 @@ import { Leaf, Lock, Mail } from "lucide-react";
 import api from "@/lib/api";
 import { useAuthStore } from "@/store/useAuthStore";
 import { motion } from "framer-motion";
+import type { User } from "@/types";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -16,6 +17,15 @@ export default function LoginPage() {
   const router = useRouter();
   const login = useAuthStore((s) => s.login);
 
+  const isUser = (value: unknown): value is User => {
+    if (!value || typeof value !== "object") return false;
+    const candidate = value as Partial<User>;
+    return typeof candidate.id === "string" &&
+      typeof candidate.email === "string" &&
+      typeof candidate.full_name === "string" &&
+      typeof candidate.role === "string";
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -23,9 +33,13 @@ export default function LoginPage() {
     try {
       const res = await api.post("/auth/login", { email, password });
       const data = res.data.data || res.data;
-      const user = data.user || { id: data.id || "user", email, full_name: data.full_name || email.split("@")[0], role: data.role || "customer" };
-      const token = data.access_token || data.token;
-      login(user, token);
+      const token = data.access_token;
+      const refreshToken = data.refresh_token;
+      const user = data.user;
+      if (!token || !isUser(user)) {
+        throw new Error("Respons login backend tidak lengkap");
+      }
+      login(user, token, refreshToken);
       if (user.role === "admin") router.push("/admin");
       else router.push("/");
     } catch (err: any) {

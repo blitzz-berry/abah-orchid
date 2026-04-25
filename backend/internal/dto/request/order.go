@@ -10,6 +10,13 @@ type CheckoutRequest struct {
 	CourierCode        string  `json:"courier_code" binding:"required"`
 	CourierService     string  `json:"courier_service" binding:"required"`
 	ShippingCost       float64 `json:"shipping_cost" binding:"required"`
+	ShippingInsurance  bool    `json:"shipping_insurance"`
+	InsuranceCost      float64 `json:"insurance_cost"`
+	PackingType        string  `json:"packing_type"`
+	PackingCost        float64 `json:"packing_cost"`
+	LivePlantNote      string  `json:"live_plant_note"`
+	CouponCode         string  `json:"coupon_code"`
+	PaymentMethod      string  `json:"payment_method"`
 	Note               string  `json:"note"`
 }
 

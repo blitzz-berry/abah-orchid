@@ -1,0 +1,7 @@
+.git
+.gotmp
+uploads
+tmp
+*.log
+.env
+Dockerfile

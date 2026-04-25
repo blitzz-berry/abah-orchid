@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { Suspense, useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Search, Filter, ShoppingCart, Leaf, SlidersHorizontal, X, ChevronDown } from "lucide-react";
+import { Search, Leaf, SlidersHorizontal, X } from "lucide-react";
 import api from "@/lib/api";
 import { motion, AnimatePresence } from "framer-motion";
 import Navbar from "@/components/ui/Navbar";
@@ -18,7 +18,11 @@ const SORT_OPTIONS = [
 
 const SIZE_OPTIONS = ["seedling", "remaja", "dewasa", "berbunga"];
 
-export default function CatalogPage() {
+type ApiErrorLike = {
+  message?: string;
+};
+
+function CatalogPageContent() {
   const searchParams = useSearchParams();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -40,8 +44,9 @@ export default function CatalogPage() {
         if (prodRes.status === "fulfilled") { setProducts(prodRes.value.data.data || []); setErrorMsg(null); }
         else setErrorMsg("Gagal memuat produk");
         if (catRes.status === "fulfilled") setCategories(catRes.value.data.data || []);
-      } catch (error: any) {
-        setErrorMsg(error?.message || "Gagal memuat data");
+      } catch (error: unknown) {
+        const apiError = error as ApiErrorLike;
+        setErrorMsg(apiError.message || "Gagal memuat data");
       } finally { setIsLoading(false); }
     };
     fetchData();
@@ -166,5 +171,13 @@ export default function CatalogPage() {
       </main>
       <Footer />
     </div>
+  );
+}
+
+export default function CatalogPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[var(--bg)]" />}>
+      <CatalogPageContent />
+    </Suspense>
   );
 }

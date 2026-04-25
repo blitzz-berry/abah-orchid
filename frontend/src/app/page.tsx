@@ -7,7 +7,7 @@ import { ArrowRight, Leaf, ShoppingBag, ShieldCheck, Truck, Star, ChevronRight }
 import Navbar from "@/components/ui/Navbar";
 import Footer from "@/components/ui/Footer";
 import api from "@/lib/api";
-import type { Product, Category } from "@/types";
+import type { Product } from "@/types";
 
 const CATEGORIES_STATIC = [
   { name: "Phalaenopsis", slug: "phalaenopsis", emoji: "🦋" },
@@ -57,21 +57,22 @@ export default function Home() {
       <Navbar />
       <main className="flex-1">
         {/* Hero */}
-        <section className="relative flex flex-col items-center justify-center px-4 pt-32 pb-24 text-center overflow-hidden">
-          <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-[var(--color-brand-200)]/30 dark:bg-[var(--color-brand-800)]/20 blur-[120px] -z-10" />
-          <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-[var(--color-leaf-50)]/50 dark:bg-[var(--color-leaf-900)]/20 blur-[120px] -z-10" />
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8 }} className="max-w-4xl flex flex-col items-center">
-            <span className="px-4 py-1.5 rounded-full bg-[var(--color-brand-100)] text-[var(--color-brand-700)] dark:bg-[var(--color-brand-900)] dark:text-[var(--color-brand-200)] font-semibold text-sm mb-6 border border-[var(--color-brand-200)] dark:border-[var(--color-brand-800)]">🌟 Platform E-Commerce Anggrek #1 di Indonesia</span>
-            <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight mb-8 leading-tight">
-              Koleksi <span className="bg-gradient-to-r from-[var(--color-brand-500)] to-[var(--color-leaf-500)] bg-clip-text text-transparent">Anggrek Premium</span><br/>Untuk Koleksi & Bisnis
+        <section className="relative flex flex-col items-center justify-center px-4 pt-32 pb-24 text-center overflow-hidden bg-[url('/images/kebun1.png')] bg-cover bg-center">
+          <div className="absolute inset-0 bg-black/55" />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/25 to-[var(--bg)]" />
+          
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8 }} className="relative z-10 max-w-4xl flex flex-col items-center">
+            <span className="px-4 py-1.5 rounded-full bg-white/15 text-white font-semibold text-sm mb-6 border border-white/25 backdrop-blur">🌟 Platform E-Commerce Anggrek #1 di Indonesia</span>
+            <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight mb-8 leading-tight text-white">
+              Koleksi <span className="text-[var(--color-brand-200)]">Anggrek Premium</span><br />Untuk Koleksi & Bisnis
             </h1>
-            <p className="text-lg md:text-xl text-gray-600 dark:text-gray-300 max-w-2xl mb-12">Temukan berbagai varietas anggrek langka, bibit unggul, hingga tanaman berbunga siap panen.</p>
+            <p className="text-lg md:text-xl text-white/85 max-w-2xl mb-12">Temukan berbagai varietas anggrek langka, bibit unggul, hingga tanaman berbunga siap panen.</p>
             <div className="flex flex-col sm:flex-row gap-4 mb-16">
-              <Link href="/products" className="flex items-center justify-center gap-2 px-8 py-4 bg-black text-white dark:bg-white dark:text-black rounded-full font-bold text-lg hover:scale-105 transition-transform shadow-xl shadow-black/10">Mulai Belanja <ArrowRight className="w-5 h-5" /></Link>
-              <Link href="/products?type=B2B" className="flex items-center justify-center gap-2 px-8 py-4 bg-transparent border-2 border-black dark:border-white rounded-full font-bold text-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors">Pemesanan B2B</Link>
+              <Link href="/products" className="flex items-center justify-center gap-2 px-8 py-4 bg-white text-black rounded-full font-bold text-lg hover:scale-105 transition-transform shadow-xl shadow-black/20">Mulai Belanja <ArrowRight className="w-5 h-5" /></Link>
+              <Link href="/products?type=B2B" className="flex items-center justify-center gap-2 px-8 py-4 bg-white/10 text-white border-2 border-white/70 rounded-full font-bold text-lg hover:bg-white/20 transition-colors backdrop-blur">Pemesanan B2B</Link>
             </div>
           </motion.div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl w-full">
+          <div className="relative z-10 grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl w-full">
             {[{ icon: Leaf, title: "Varietas Terlengkap", desc: "Dari Phalaenopsis hingga Vanda langka" }, { icon: ShoppingBag, title: "Harga Grosir B2B", desc: "Beli per batch dengan harga spesial" }, { icon: ShieldCheck, title: "Garansi Pengiriman", desc: "Packing premium & asuransi tanaman" }].map((f, i) => (
               <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.2 + i * 0.1 }} className="flex flex-col items-center text-center p-6 rounded-2xl glass hover:shadow-lg transition-shadow">
                 <div className="p-4 bg-[var(--color-brand-50)] dark:bg-[var(--color-brand-900)] rounded-2xl mb-4"><f.icon className="w-7 h-7 text-[var(--color-brand-600)] dark:text-[var(--color-brand-300)]" /></div>

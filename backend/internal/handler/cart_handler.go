@@ -63,8 +63,36 @@ func (h *CartHandler) AddToCart(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Item added to cart"})
 }
 
+func (h *CartHandler) UpdateCartItem(c *gin.Context) {
+	userID := c.GetString("userID")
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	cartItemID := c.Param("id")
+	var req struct {
+		Quantity int `json:"quantity" binding:"required,min=1"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := h.cartService.UpdateCartItemQuantity(userID, cartItemID, req.Quantity); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Cart item updated"})
+}
+
 func (h *CartHandler) RemoveFromCart(c *gin.Context) {
 	userID := c.GetString("userID")
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
 	cartItemID := c.Param("id")
 
 	if err := h.cartService.RemoveFromCart(userID, cartItemID); err != nil {
@@ -73,4 +101,19 @@ func (h *CartHandler) RemoveFromCart(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Item removed from cart"})
+}
+
+func (h *CartHandler) ClearCart(c *gin.Context) {
+	userID := c.GetString("userID")
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	if err := h.cartService.ClearCart(userID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Cart cleared"})
 }

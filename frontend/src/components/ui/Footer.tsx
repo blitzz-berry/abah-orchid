@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { Leaf } from "lucide-react";
 
 const footerLinks = {
   produk: [
@@ -33,8 +32,10 @@ export default function Footer() {
           {/* Brand */}
           <div className="md:col-span-1">
             <Link href="/" className="flex items-center gap-2 mb-4">
-              <Leaf className="w-7 h-7 text-[var(--color-leaf-500)]" />
-              <span className="text-xl font-bold tracking-tight">OrchidMart</span>
+              <img src="/images/anggrek.png" alt="Logo" className="w-8 h-8 object-contain" />
+              <span className="text-xl font-bold tracking-tight">
+                Abah<span className="text-[var(--color-leaf-600)]">Orchid</span>
+              </span>
             </Link>
             <p className="text-sm text-gray-500 leading-relaxed mb-4">
               Platform e-commerce khusus anggrek #1 di Indonesia. Koleksi premium untuk hobbyist & bisnis.
@@ -104,7 +105,7 @@ export default function Footer() {
         {/* Bottom Bar */}
         <div className="mt-12 pt-8 border-t border-gray-200 dark:border-gray-800 flex flex-col sm:flex-row justify-between items-center gap-4">
           <p className="text-xs text-gray-400">
-            © {new Date().getFullYear()} OrchidMart. All rights reserved.
+            © {new Date().getFullYear()} AbahOrchid. All rights reserved.
           </p>
           <div className="flex items-center gap-4 text-xs text-gray-400">
             <span>💳 Midtrans Payment</span>

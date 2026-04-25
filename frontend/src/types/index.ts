@@ -19,11 +19,21 @@ export interface Address {
   recipient_name: string;
   phone: string;
   province: string;
+  province_id?: string;
   city: string;
+  city_id?: string;
   district: string;
   postal_code: string;
   full_address: string;
   is_default: boolean;
+}
+
+export interface WishlistItem {
+  id: string;
+  user_id: string;
+  product_id: string;
+  created_at?: string;
+  product: Product;
 }
 
 // =============================================
@@ -144,12 +154,24 @@ export interface Order {
   admin_note?: string;
   items?: OrderItem[];
   payment?: Payment;
+  payments?: Payment[];
   paid_at?: string;
   shipped_at?: string;
   delivered_at?: string;
   completed_at?: string;
   cancelled_at?: string;
   created_at?: string;
+}
+
+export interface Review {
+  id: string;
+  product_id: string;
+  user_id: string;
+  order_id: string;
+  rating: number;
+  comment?: string;
+  created_at?: string;
+  user?: User;
 }
 
 export interface Payment {
@@ -159,7 +181,7 @@ export interface Payment {
   provider?: string;
   external_id?: string;
   amount: number;
-  status: 'PENDING' | 'PAID' | 'EXPIRED' | 'REFUNDED';
+  status: 'PENDING' | 'WAITING_PROOF' | 'WAITING_CONFIRMATION' | 'PAID' | 'EXPIRED' | 'REFUNDED';
   payment_url?: string;
   proof_image_url?: string;
   paid_at?: string;

@@ -74,6 +74,12 @@ cd "d:\web kp\ecommerce-kp\frontend"
 npm run dev
 ```
 
+
+Kredensial default sekarang:
+email: admin@orchidmart.local
+password: Admin123!
+
+
 ---
 
 ## 🎯 Akses URL
@@ -82,3 +88,41 @@ Setelah 3 command di atas nyala tanpa error, lo udah bisa tes nge-review dan nyo
 - **Halaman Login/Register:** [http://localhost:3000/login](http://localhost:3000/login)
 - **Dashboard Cart:** [http://localhost:3000/cart](http://localhost:3000/cart)
 - **Dashboard Admin:** [http://localhost:3000/admin](http://localhost:3000/admin)
+
+---
+
+## Status Update Implementasi
+Berikut rangkuman kerja yang udah selesai dikerjain di repo ini.
+
+### Backend
+- Auth login sekarang ngirim `user`, `access_token`, dan `refresh_token`.
+- Endpoint yang sebelumnya bolong udah ditambah:
+  - `PUT /cart/:id`
+  - `PUT /auth/me`
+  - `POST /auth/forgot-password`
+  - `POST /auth/reset-password`
+  - `GET/POST/PUT/DELETE /addresses`
+  - `POST /addresses/:id/default`
+- Route admin dan mutasi produk sekarang dilindungi middleware admin.
+- Payment record saat checkout sekarang kesimpan, dan webhook Midtrans udah update payment + validasi signature.
+- Wishlist dan review udah aktif.
+- Analytics admin sekarang pakai endpoint real `GET /admin/analytics/overview`.
+
+### Frontend
+- Login udah pakai user asli dari backend, bukan object dummy.
+- Area admin sekarang ngeblok user non-admin.
+- Halaman profile bisa edit profil dan CRUD alamat.
+- Checkout/cart sekarang bisa pakai alamat tersimpan.
+- Flow forgot/reset password udah jalan end-to-end.
+- Wishlist page, toggle wishlist di detail produk, dan submit review dari order detail udah jalan.
+- Dashboard admin sekarang nampilin KPI, tren penjualan, status order, top product, segment customer, low-stock alert, dan pesanan terbaru.
+
+### Verifikasi Terakhir
+- Backend: `go test ./...` ✅
+- Frontend lint: `npm run lint` ✅
+- Frontend build: `npm run build` ✅
+
+### Gap Yang Masih Tersisa
+- Notifikasi email status order belum lengkap.
+- Lookup provinsi/kota RajaOngkir di profile masih belum full.
+- Manual payment, refund, dan analytics PRD lanjutan masih belum ada.

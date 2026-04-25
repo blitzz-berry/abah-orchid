@@ -1,70 +1,39 @@
-# 🔧 OrchidMart Frontend Overhaul Plan
+Belum Sesuai / Missing Signifikan
 
-## Masalah Yang Ditemukan
+  - Google OAuth P2 belum ada.
+  - Xendit fallback belum ada.
+  - GET /api/v1/auth/me belum ada.
+  - DELETE /api/v1/cart clear cart belum exposed.
+  - GET /api/v1/admin/orders/:id detail admin order belum exposed sebagai route terpisah.
+  - GET /api/v1/admin/inventory, PUT /api/v1/admin/inventory/:product_id, GET /api/v1/admin/inventory/low-stock belum sesuai
+    endpoint PRD; implementasi pakai product stock adjustment dan /admin/inventory/movements.
+  - Suspend/blacklist customer belum ada.
+  - B2B bulk order / harga grosir / faktur bisnis belum ada walau customer_type sudah disiapkan.
+  - Monitoring, Redis cache, pgbouncer, CDN/S3 belum terimplementasi.
 
-### 1. **Missing Pages (PRD vs Actual)**
-| Halaman (PRD) | Status |
-|---|---|
-| Homepage | ✅ Ada, tapi tidak ada section kategori & produk terbaru |
-| Products Listing | ✅ Ada, tapi filter/search belum fungsional |
-| Product Detail `[slug]` | ⚠️ Ada tapi pakai `[id]` bukan `[slug]` sesuai PRD |
-| Cart | ✅ Ada |
-| Checkout | ❌ Gabung di cart, harusnya terpisah |
-| Login | ✅ Ada |
-| Register | ✅ Ada |
-| Forgot Password | ❌ Belum ada |
-| Profile | ❌ Belum ada |
-| Orders (customer) | ❌ Belum ada |
-| Order Detail | ❌ Belum ada |
-| Admin Dashboard | ✅ Ada, tapi sidebar nggak navigable |
-| Admin Products | ✅ Ada, tapi sidebar hilang |
-| Admin Orders | ❌ Belum ada |
-| Admin Inventory | ❌ Belum ada |
-| Admin Customers | ❌ Belum ada |
 
-### 2. **Masalah Struktural**
-- Navbar copy-paste di setiap page, harusnya pakai shared component
-- Admin tidak punya layout.tsx (sidebar shared)
-- Auth store nggak persist di refresh browser
-- Homepage nggak ada section kategori populer & produk terbaru/bestseller
-- Footer belum ada sama sekali
-- Tidak ada `components/` directory sama sekali
-- Tidak ada `types/` directory
 
-### 3. **Masalah UI/UX**
-- Product detail pakai avatar placeholder bukan gambar produk real
-- Kategori belum bisa di-browse
-- Search dan filter di katalog belum fungsional
-- Admin sidebar pakai `<a href="#">` — nggak navigasi ke mana-mana
+  Fitur yang masih parsial setelah perbaikan terakhir:
 
----
-
-## Rencana Perbaikan (Prioritas)
-
-### Phase 1: Foundation & Shared Components
-1. Bikin `types/index.ts` — TypeScript interfaces
-2. Bikin shared Navbar component (storefront)
-3. Bikin shared Footer component
-4. Bikin Admin layout.tsx dengan sidebar navigable
-5. Fix auth store persistence (hydrate dari localStorage)
-
-### Phase 2: Fix Existing Pages
-6. Homepage — tambah kategori populer, produk terbaru, bestseller, footer
-7. Products — fungsionalkan search & filter + category filter
-8. Product Detail — fix ke slug-based, tampilkan gallery & specs lengkap
-9. Cart — pisahkan checkout flow
-10. Admin Dashboard — sidebar navigable, grafik placeholder
-
-### Phase 3: Missing Pages
-11. Forgot Password page
-12. Profile page
-13. Orders page (customer)
-14. Order Detail page
-15. Admin Orders page
-16. Admin Inventory page
-17. Admin Customers page
-
----
-
-## Execution Order
-Karena ini banyak banget, gw prioritasin: **Foundation → Fix Existing → Add Missing**
+  - Checkout & payment: backend sudah ada Midtrans, COD, manual proof upload, expiry 24 jam, tapi UI baru expose Midtrans/COD.
+    Transfer bank manual, e-wallet spesifik, kartu kredit, dan upload bukti transfer dari UI belum lengkap.
+    
+  - Shipping: cek ongkir RajaOngkir ada, packing tanaman hidup ada, input resi admin ada. Tracking real-time masih stub,
+    ekspedisi belum selengkap PRD, dan rekomendasi layanan kilat belum benar-benar otomatis.
+  - Admin produk: CRUD dasar ada, tapi UI belum lengkap untuk edit produk, status active/inactive/draft, upload multiple image,
+    duplikat produk, dan bulk update harga.
+  - Inventory: tracking stok, movement log, low stock, reduce/restore stok sudah ada. Tapi unit inventori masih melekat di
+    produk, belum ada workflow batch/varietas yang matang, stock overview UI/endpoint baru dasar, dan stock movement chart belum
+    ada.
+  - Dashboard analytics: revenue, order count, AOV, chart sales, top products, inventory summary, customer summary sudah ada.
+    Yang masih kurang: conversion rate valid, category bestseller detail, MoM/YoY, stock turnover, customer geography, CLV,
+    retention, seasonal trend, demand prediction.
+  - Customer management: list customer dan detail order history ada. Segmentasi B2B/B2C baru berupa field, belum ada workflow
+    manajemen segmentasi; blacklist/suspend belum ada.
+  - Review: backend rule sudah kuat dan test sudah ada, UI dasar sudah ada. Belum ada moderation/admin management review.
+  - Coupon/voucher: model dan kalkulasi backend ada, tapi UI checkout dan admin CRUD coupon belum matang.
+  - Security/NFR: JWT refresh rotation, bcrypt, CSP, CORS whitelist, file validation, login rate limit, global rate limit ada.
+    Belum ada Redis-backed rate limit/session/cache, IP whitelist admin, structured logging, Prometheus/Grafana, Sentry,
+    pgbouncer.
+  - Storage/deployment: local upload sudah ada. PRD minta S3-compatible object storage/CDN, itu belum.
+  - B2B: customer_type dan link B2B ada, tapi belum ada harga grosir, bulk order portal, faktur bisnis, atau flow negosiasi.

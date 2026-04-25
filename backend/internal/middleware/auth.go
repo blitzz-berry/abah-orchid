@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"orchidmart-backend/internal/config"
 )
 
 func AuthMiddleware() gin.HandlerFunc {
@@ -27,6 +28,10 @@ func AuthMiddleware() gin.HandlerFunc {
 		tokenString := parts[1]
 		jwtSecret := os.Getenv("JWT_SECRET")
 		if jwtSecret == "" {
+			if config.IsProduction() {
+				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "JWT_SECRET is required"})
+				return
+			}
 			jwtSecret = "supersecretkey"
 		}
 
@@ -53,6 +58,18 @@ func AuthMiddleware() gin.HandlerFunc {
 		role, _ := claims["role"].(string)
 		c.Set("userID", sub)
 		c.Set("userRole", role)
+
+		c.Next()
+	}
+}
+
+func AdminMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		role := c.GetString("userRole")
+		if role != "admin" {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Admin access required"})
+			return
+		}
 
 		c.Next()
 	}
