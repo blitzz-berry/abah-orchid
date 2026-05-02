@@ -34,12 +34,11 @@ export default function LoginPage() {
       const res = await api.post("/auth/login", { email, password });
       const data = res.data.data || res.data;
       const token = data.access_token;
-      const refreshToken = data.refresh_token;
       const user = data.user;
       if (!token || !isUser(user)) {
         throw new Error("Respons login backend tidak lengkap");
       }
-      login(user, token, refreshToken);
+      login(user, token);
       if (user.role === "admin") router.push("/admin");
       else router.push("/");
     } catch (err: any) {

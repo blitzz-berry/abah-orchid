@@ -137,7 +137,7 @@ export default function AdminDashboard() {
                     <div key={point.label} className="flex flex-col items-center gap-3">
                       <div className="text-[10px] text-gray-500 font-medium text-center">Rp {Math.round(point.revenue / 1000).toLocaleString("id-ID")}k</div>
                       <div className="w-full flex justify-center">
-                        <div className="w-full max-w-[36px] rounded-t-2xl bg-gradient-to-t from-[var(--color-brand-600)] to-[var(--color-leaf-500)]" style={{ height }} />
+                        <div className="w-full max-w-[36px] rounded-t-2xl bg-[var(--color-brand-600)]" style={{ height }} />
                       </div>
                       <div className="text-[11px] font-semibold text-center">{point.label}</div>
                       <div className="text-[10px] text-gray-400">{point.orders} order</div>

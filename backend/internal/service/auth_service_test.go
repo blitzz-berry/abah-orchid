@@ -131,6 +131,8 @@ func TestAuthServiceRegisterHashesPasswordAndRejectsDuplicateEmail(t *testing.T)
 }
 
 func TestAuthServiceLoginAndRefreshRotateRefreshToken(t *testing.T) {
+	t.Setenv("JWT_SECRET", "test-jwt-secret-at-least-32-characters")
+
 	repo := newFakeUserRepo()
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte("secret123"), 12)
 	if err != nil {

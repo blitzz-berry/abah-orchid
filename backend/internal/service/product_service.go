@@ -7,7 +7,7 @@ import (
 
 type ProductService interface {
 	GetAllProducts(query repository.ProductQuery) ([]model.Product, int64, error)
-	GetProductByID(id string) (*model.Product, error)
+	GetProductByID(id string, includeInactive bool) (*model.Product, error)
 	CreateProduct(product *model.Product) error
 	UpdateProduct(product *model.Product) error
 	DeleteProduct(id string) error
@@ -31,8 +31,8 @@ func (s *productService) GetAllProducts(query repository.ProductQuery) ([]model.
 	return s.productRepo.FindAll(query)
 }
 
-func (s *productService) GetProductByID(id string) (*model.Product, error) {
-	return s.productRepo.FindByID(id)
+func (s *productService) GetProductByID(id string, includeInactive bool) (*model.Product, error) {
+	return s.productRepo.FindByID(id, includeInactive)
 }
 
 func (s *productService) CreateProduct(product *model.Product) error {

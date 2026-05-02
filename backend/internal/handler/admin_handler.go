@@ -302,7 +302,7 @@ func (h *AdminHandler) GetTrendAnalytics(c *gin.Context) {
 
 func (h *AdminHandler) GetOrders(c *gin.Context) {
 	var orders []model.Order
-	if err := h.db.Preload("Items").Preload("User").Order("created_at desc").Find(&orders).Error; err != nil {
+	if err := h.db.Preload("Items").Preload("Payments").Preload("User").Order("created_at desc").Find(&orders).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch orders"})
 		return
 	}
@@ -353,6 +353,7 @@ func (h *AdminHandler) UpdateOrderStatus(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update status"})
 		return
 	}
+	_ = h.createOrderNotification(id, req.Status)
 	h.logAdminActivity(c, "UPDATE_STATUS", "order", id, gin.H{"status": req.Status})
 	c.JSON(http.StatusOK, gin.H{"message": "Status updated"})
 }
@@ -362,6 +363,7 @@ func (h *AdminHandler) ConfirmPayment(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	_ = h.createOrderNotification(c.Param("id"), "PAID")
 	h.logAdminActivity(c, "CONFIRM_PAYMENT", "order", c.Param("id"), nil)
 	c.JSON(http.StatusOK, gin.H{"message": "Payment confirmed"})
 }
@@ -425,6 +427,7 @@ func (h *AdminHandler) UpdateOrderTracking(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update tracking"})
 		return
 	}
+	_ = h.createOrderNotification(id, "SHIPPED")
 	h.logAdminActivity(c, "UPDATE_TRACKING", "order", id, gin.H{"tracking_number": req.TrackingNumber})
 	c.JSON(http.StatusOK, gin.H{"message": "Tracking updated"})
 }
@@ -505,7 +508,7 @@ func (h *AdminHandler) UpdateInventory(c *gin.Context) {
 			Quantity:      quantity,
 			ReferenceType: "ADMIN_INVENTORY",
 			Note:          req.Note,
-			PerformedBy:   adminID,
+			PerformedBy:   &adminID,
 		}).Error
 	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -630,6 +633,41 @@ func (h *AdminHandler) logAdminActivity(c *gin.Context, action, entityType, enti
 		return
 	}
 	_ = h.db.Create(&log).Error
+}
+
+func (h *AdminHandler) createOrderNotification(orderID string, status string) error {
+	var order model.Order
+	if err := h.db.Where("id = ?", orderID).First(&order).Error; err != nil {
+		return err
+	}
+	title, message := orderNotificationContent(order.OrderNumber, status)
+	return h.db.Create(&model.Notification{
+		UserID:        order.UserID,
+		Type:          "order_status",
+		Title:         title,
+		Message:       message,
+		ReferenceType: "order",
+		ReferenceID:   order.ID,
+	}).Error
+}
+
+func orderNotificationContent(orderNumber string, status string) (string, string) {
+	switch status {
+	case "PAID":
+		return "Pembayaran dikonfirmasi", "Pesanan " + orderNumber + " sudah di-acc dan akan segera diproses."
+	case "PROCESSING":
+		return "Pesanan sedang diproses", "Pesanan " + orderNumber + " sedang disiapkan oleh admin."
+	case "SHIPPED":
+		return "Pesanan dikirim", "Pesanan " + orderNumber + " sudah dikirim. Cek detail pesanan untuk melihat resi."
+	case "DELIVERED":
+		return "Pesanan diterima", "Pesanan " + orderNumber + " sudah ditandai diterima."
+	case "COMPLETED":
+		return "Pesanan selesai", "Pesanan " + orderNumber + " sudah selesai."
+	case "CANCELLED":
+		return "Pesanan dibatalkan", "Pesanan " + orderNumber + " dibatalkan oleh admin."
+	default:
+		return "Status pesanan diperbarui", "Status pesanan " + orderNumber + " berubah menjadi " + status + "."
+	}
 }
 
 func containsStatus(statuses []string, target string) bool {

@@ -1,14 +1,25 @@
 package handler
 
 import (
+	"errors"
+	"io"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"orchidmart-backend/internal/config"
 	"orchidmart-backend/internal/dto/request"
 	"orchidmart-backend/internal/dto/response"
 	"orchidmart-backend/internal/model"
 	"orchidmart-backend/internal/service"
 )
+
+const (
+	refreshTokenCookieName = "refresh_token"
+	refreshTokenCookiePath = "/api/v1/auth"
+)
+
+var refreshTokenCookieMaxAge = int((7 * 24 * time.Hour).Seconds())
 
 type AuthHandler struct {
 	authService service.AuthService
@@ -56,9 +67,9 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	setRefreshTokenCookie(c, rfToken)
 	res := response.AuthResponse{
-		AccessToken:  acToken,
-		RefreshToken: rfToken,
+		AccessToken: acToken,
 		User: response.UserResponse{
 			ID:        user.ID,
 			Email:     user.Email,
@@ -76,25 +87,29 @@ func (h *AuthHandler) Login(c *gin.Context) {
 }
 
 func (h *AuthHandler) Refresh(c *gin.Context) {
-	var req struct {
-		RefreshToken string `json:"refresh_token" binding:"required"`
+	refreshToken, err := refreshTokenFromRequest(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid refresh request"})
+		return
 	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if refreshToken == "" {
+		clearRefreshTokenCookie(c)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Refresh token is required"})
 		return
 	}
 
-	user, acToken, rfToken, err := h.authService.Refresh(req.RefreshToken)
+	user, acToken, rfToken, err := h.authService.Refresh(refreshToken)
 	if err != nil {
+		clearRefreshTokenCookie(c)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
 
+	setRefreshTokenCookie(c, rfToken)
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Token refreshed",
 		"data": response.AuthResponse{
-			AccessToken:  acToken,
-			RefreshToken: rfToken,
+			AccessToken: acToken,
 			User: response.UserResponse{
 				ID:        user.ID,
 				Email:     user.Email,
@@ -108,11 +123,13 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 }
 
 func (h *AuthHandler) Logout(c *gin.Context) {
-	var req struct {
-		RefreshToken string `json:"refresh_token"`
+	refreshToken, err := refreshTokenFromRequest(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid logout request"})
+		return
 	}
-	_ = c.ShouldBindJSON(&req)
-	if err := h.authService.Logout(req.RefreshToken); err != nil {
+	clearRefreshTokenCookie(c)
+	if err := h.authService.Logout(refreshToken); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -366,4 +383,31 @@ func (h *AuthHandler) SetDefaultAddress(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Default address updated successfully"})
+}
+
+func refreshTokenFromRequest(c *gin.Context) (string, error) {
+	if token, err := c.Cookie(refreshTokenCookieName); err == nil && token != "" {
+		return token, nil
+	}
+
+	var req struct {
+		RefreshToken string `json:"refresh_token"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		if errors.Is(err, io.EOF) {
+			return "", nil
+		}
+		return "", err
+	}
+	return req.RefreshToken, nil
+}
+
+func setRefreshTokenCookie(c *gin.Context, token string) {
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie(refreshTokenCookieName, token, refreshTokenCookieMaxAge, refreshTokenCookiePath, "", config.IsProduction(), true)
+}
+
+func clearRefreshTokenCookie(c *gin.Context) {
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie(refreshTokenCookieName, "", -1, refreshTokenCookiePath, "", config.IsProduction(), true)
 }

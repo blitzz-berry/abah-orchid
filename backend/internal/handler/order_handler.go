@@ -142,27 +142,7 @@ func (h *OrderHandler) GetPaymentStatus(c *gin.Context) {
 }
 
 func (h *OrderHandler) UploadPaymentProof(c *gin.Context) {
-	userID := c.GetString("userID")
-	if userID == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
-		return
-	}
-
-	var req struct {
-		ProofImageURL string `json:"proof_image_url" binding:"required,url"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	payment, err := h.orderService.UploadPaymentProof(c.Param("order_id"), userID, req.ProofImageURL)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "Payment proof uploaded", "data": payment})
+	c.JSON(http.StatusGone, gin.H{"error": "Upload payment proof using multipart file endpoint"})
 }
 
 func (h *OrderHandler) RequestReturn(c *gin.Context) {

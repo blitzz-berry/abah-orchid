@@ -9,14 +9,6 @@ import Footer from "@/components/ui/Footer";
 import api from "@/lib/api";
 import type { Product } from "@/types";
 
-const CATEGORIES_STATIC = [
-  { name: "Phalaenopsis", slug: "phalaenopsis", emoji: "🦋" },
-  { name: "Dendrobium", slug: "dendrobium", emoji: "🌸" },
-  { name: "Vanda", slug: "vanda", emoji: "💜" },
-  { name: "Cattleya", slug: "cattleya", emoji: "🌺" },
-  { name: "Oncidium", slug: "oncidium", emoji: "💛" },
-];
-
 function ProductCard({ product, idx }: { product: Product; idx: number }) {
   const imgUrl = product.images?.[0]?.image_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(product.name)}&background=random&size=400`;
   return (
@@ -51,6 +43,8 @@ export default function Home() {
   }, []);
 
   const latestProducts = products.slice(0, 8);
+  const b2bProduct = products.find((product) => product.unit_type === "PER_BATCH");
+  const b2bImageUrl = b2bProduct?.images?.[0]?.image_url || "/images/anggrek.png";
 
   return (
     <div className="flex flex-col min-h-screen bg-[var(--bg)] text-[var(--fg)]">
@@ -58,8 +52,7 @@ export default function Home() {
       <main className="flex-1">
         {/* Hero */}
         <section className="relative flex flex-col items-center justify-center px-4 pt-32 pb-24 text-center overflow-hidden bg-[url('/images/kebun1.png')] bg-cover bg-center">
-          <div className="absolute inset-0 bg-black/55" />
-          <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/25 to-[var(--bg)]" />
+          <div className="absolute inset-0 bg-black/60" />
           
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8 }} className="relative z-10 max-w-4xl flex flex-col items-center">
             <span className="px-4 py-1.5 rounded-full bg-white/15 text-white font-semibold text-sm mb-6 border border-white/25 backdrop-blur">🌟 Platform E-Commerce Anggrek #1 di Indonesia</span>
@@ -69,7 +62,7 @@ export default function Home() {
             <p className="text-lg md:text-xl text-white/85 max-w-2xl mb-12">Temukan berbagai varietas anggrek langka, bibit unggul, hingga tanaman berbunga siap panen.</p>
             <div className="flex flex-col sm:flex-row gap-4 mb-16">
               <Link href="/products" className="flex items-center justify-center gap-2 px-8 py-4 bg-white text-black rounded-full font-bold text-lg hover:scale-105 transition-transform shadow-xl shadow-black/20">Mulai Belanja <ArrowRight className="w-5 h-5" /></Link>
-              <Link href="/products?type=B2B" className="flex items-center justify-center gap-2 px-8 py-4 bg-white/10 text-white border-2 border-white/70 rounded-full font-bold text-lg hover:bg-white/20 transition-colors backdrop-blur">Pemesanan B2B</Link>
+              <Link href="/products?type=B2B" className="flex items-center justify-center gap-2 px-8 py-4 bg-transparent text-white border-2 border-white/70 rounded-full font-bold text-lg hover:bg-white/10 transition-colors">Pemesanan B2B</Link>
             </div>
           </motion.div>
           <div className="relative z-10 grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl w-full">
@@ -78,24 +71,6 @@ export default function Home() {
                 <div className="p-4 bg-[var(--color-brand-50)] dark:bg-[var(--color-brand-900)] rounded-2xl mb-4"><f.icon className="w-7 h-7 text-[var(--color-brand-600)] dark:text-[var(--color-brand-300)]" /></div>
                 <h3 className="text-lg font-bold mb-1">{f.title}</h3>
                 <p className="text-gray-600 dark:text-gray-400 text-sm">{f.desc}</p>
-              </motion.div>
-            ))}
-          </div>
-        </section>
-
-        {/* Kategori Populer */}
-        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-          <div className="flex items-center justify-between mb-8">
-            <div><h2 className="text-3xl font-extrabold tracking-tight">Kategori Populer</h2><p className="text-gray-500 mt-1">Jelajahi berdasarkan genus anggrek favorit</p></div>
-            <Link href="/products" className="text-sm font-medium text-[var(--color-brand-600)] hover:underline flex items-center gap-1">Lihat Semua <ChevronRight className="w-4 h-4" /></Link>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
-            {CATEGORIES_STATIC.map((cat, idx) => (
-              <motion.div key={cat.slug} initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: idx * 0.05 }}>
-                <Link href={`/products?category=${cat.slug}`} className="flex flex-col items-center gap-3 p-6 rounded-2xl glass hover:shadow-lg transition-all group">
-                  <span className="text-4xl group-hover:scale-110 transition-transform">{cat.emoji}</span>
-                  <span className="font-bold text-sm">{cat.name}</span>
-                </Link>
               </motion.div>
             ))}
           </div>
@@ -120,12 +95,54 @@ export default function Home() {
 
         {/* CTA Banner */}
         <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-          <div className="relative bg-gradient-to-br from-[var(--color-brand-600)] to-[var(--color-leaf-600)] rounded-3xl p-10 md:p-16 text-white overflow-hidden">
-            <div className="absolute top-0 right-0 w-64 h-64 rounded-full bg-white/10 blur-3xl" />
-            <div className="relative z-10 max-w-lg">
-              <h2 className="text-3xl md:text-4xl font-extrabold mb-4">Butuh Order Grosir?</h2>
-              <p className="text-white/80 text-lg mb-8">Dapatkan harga spesial untuk nursery, reseller, dan florist.</p>
-              <Link href="/products?type=B2B" className="px-8 py-3 bg-white text-[var(--color-brand-700)] rounded-full font-bold hover:scale-105 transition-transform inline-block">Lihat Katalog B2B</Link>
+          <div className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-zinc-950">
+            <div className="grid lg:grid-cols-[1.05fr_0.95fr]">
+              <div className="relative min-h-[300px] overflow-hidden bg-zinc-100 lg:order-2 dark:bg-zinc-900">
+                <img src={b2bImageUrl} alt={b2bProduct?.name || "Paket grosir anggrek"} className="absolute inset-0 h-full w-full object-cover" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
+                <div className="absolute bottom-5 left-5 right-5 rounded-2xl border border-white/20 bg-black/35 p-4 text-white backdrop-blur-sm">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-white/70">Mulai dari</div>
+                  <div className="mt-1 text-2xl font-extrabold">{b2bProduct?.name || "Paket batch siap jual"}</div>
+                  <div className="mt-2 text-sm text-white/75">Untuk reseller, florist, nursery, dan kebutuhan event.</div>
+                </div>
+              </div>
+              <div className="p-7 sm:p-9 md:p-12 lg:p-14">
+                <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-[var(--color-brand-200)] bg-[var(--color-brand-50)] px-3 py-1 text-xs font-bold uppercase tracking-wide text-[var(--color-brand-700)] dark:border-[var(--color-brand-800)] dark:bg-[var(--color-brand-900)]/40 dark:text-[var(--color-brand-200)]">
+                  <ShoppingBag className="h-4 w-4" /> Program Grosir
+                </div>
+                <h2 className="max-w-xl text-3xl font-extrabold leading-tight tracking-tight md:text-5xl">Butuh stok anggrek dalam jumlah besar?</h2>
+                <p className="mt-5 max-w-xl text-base leading-relaxed text-gray-600 md:text-lg dark:text-gray-300">Ambil paket grosir untuk restock toko, dekorasi event, atau kebutuhan nursery. Pilih batch yang sesuai, kami bantu siapkan tanaman dan packing pengirimannya.</p>
+
+                <div className="mt-8 grid gap-3 sm:grid-cols-3">
+                  {[
+                    { value: "B2B", label: "Harga batch" },
+                    { value: "Aman", label: "Packing tanaman" },
+                    { value: "Cepat", label: "Siap restock" },
+                  ].map((stat) => (
+                    <div key={stat.label} className="border-l-2 border-[var(--color-brand-500)] pl-4">
+                      <div className="text-lg font-extrabold text-[var(--color-brand-700)] dark:text-[var(--color-brand-200)]">{stat.value}</div>
+                      <div className="text-sm text-gray-500 dark:text-gray-400">{stat.label}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-9 flex flex-col gap-3 sm:flex-row">
+                  <Link href="/products?type=B2B" className="inline-flex items-center justify-center gap-2 rounded-full bg-[var(--color-brand-700)] px-7 py-3.5 font-bold text-white shadow-sm transition-transform hover:scale-[1.02] hover:bg-[var(--color-brand-800)]">
+                    Lihat Paket Grosir <ArrowRight className="h-5 w-5" />
+                  </Link>
+                  <Link href="/products" className="inline-flex items-center justify-center rounded-full border border-gray-300 px-7 py-3.5 font-bold text-gray-800 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-white/5">
+                    Cek Semua Produk
+                  </Link>
+                </div>
+
+                <div className="mt-8 flex flex-wrap gap-x-5 gap-y-2 text-sm text-gray-500 dark:text-gray-400">
+                  {["Bibit", "Tanaman remaja", "Anggrek berbunga"].map((item) => (
+                    <span key={item} className="inline-flex items-center gap-2">
+                      <Leaf className="h-4 w-4 text-[var(--color-leaf-600)]" /> {item}
+                    </span>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </section>

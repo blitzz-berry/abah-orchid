@@ -126,6 +126,7 @@ export interface OrderItem {
   order_id: string;
   product_id: string;
   product_name: string;
+  product_image_url?: string;
   product_price: number;
   quantity: number;
   subtotal: number;
@@ -186,6 +187,19 @@ export interface Payment {
   proof_image_url?: string;
   paid_at?: string;
   expired_at?: string;
+}
+
+export interface Notification {
+  id: string;
+  user_id: string;
+  type: 'order_status' | 'payment' | 'promo' | 'stock_alert';
+  title: string;
+  message: string;
+  reference_type?: 'order' | 'product' | 'payment';
+  reference_id?: string;
+  is_read: boolean;
+  read_at?: string;
+  created_at?: string;
 }
 
 // =============================================

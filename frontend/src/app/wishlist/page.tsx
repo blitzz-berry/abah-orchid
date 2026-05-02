@@ -15,6 +15,8 @@ export default function WishlistPage() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const [items, setItems] = useState<WishlistItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [addingProductId, setAddingProductId] = useState<string | null>(null);
+  const [addedProductId, setAddedProductId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -38,7 +40,27 @@ export default function WishlistPage() {
     try {
       await api.delete(`/wishlist/${productID}`);
       setItems((prev) => prev.filter((item) => item.product_id !== productID));
-    } catch {}
+    } catch (e: any) {
+      alert("Gagal menghapus wishlist: " + (e.response?.data?.error || e.message));
+    }
+  };
+
+  const handleAddToCart = async (productID: string) => {
+    if (!productID) {
+      alert("Produk tidak valid.");
+      return;
+    }
+
+    setAddingProductId(productID);
+    try {
+      await api.post("/cart/items", { product_id: productID, quantity: 1 });
+      setAddedProductId(productID);
+      setTimeout(() => setAddedProductId((current) => current === productID ? null : current), 2500);
+    } catch (e: any) {
+      alert("Gagal masukin ke cart: " + (e.response?.data?.error || e.message));
+    } finally {
+      setAddingProductId(null);
+    }
   };
 
   return (
@@ -68,9 +90,15 @@ export default function WishlistPage() {
                   <div className="text-lg font-extrabold text-[var(--color-brand-600)] mt-2">Rp {item.product.price.toLocaleString("id-ID")}</div>
                 </div>
                 <div className="flex flex-col gap-2">
-                  <Link href={`/products/${item.product.id}`} className="p-2 rounded-lg bg-black text-white dark:bg-white dark:text-black">
+                  <button
+                    type="button"
+                    onClick={() => handleAddToCart(item.product_id || item.product.id)}
+                    disabled={addingProductId === (item.product_id || item.product.id)}
+                    className="p-2 rounded-lg bg-black text-white dark:bg-white dark:text-black disabled:opacity-50"
+                    title={addedProductId === (item.product_id || item.product.id) ? "Sudah masuk cart" : "Masukkan ke cart"}
+                  >
                     <ShoppingCart className="w-4 h-4" />
-                  </Link>
+                  </button>
                   <button onClick={() => handleRemove(item.product_id)} className="p-2 rounded-lg bg-red-50 text-red-600">
                     <Trash2 className="w-4 h-4" />
                   </button>

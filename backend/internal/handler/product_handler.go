@@ -21,6 +21,7 @@ func NewProductHandler(productService service.ProductService) *ProductHandler {
 }
 
 func (h *ProductHandler) GetAllProducts(c *gin.Context) {
+	includeInactive := c.GetString("userRole") == "admin" && c.Query("include_inactive") == "true"
 	query := repository.ProductQuery{
 		Search:          c.Query("search"),
 		Category:        c.Query("category"),
@@ -28,7 +29,7 @@ func (h *ProductHandler) GetAllProducts(c *gin.Context) {
 		Sort:            c.DefaultQuery("sort", "newest"),
 		Page:            intQuery(c, "page", 1),
 		PerPage:         intQuery(c, "per_page", 20),
-		IncludeInactive: c.Query("include_inactive") == "true",
+		IncludeInactive: includeInactive,
 	}
 	if c.Query("in_stock") != "" {
 		value := c.Query("in_stock") == "true"
@@ -107,7 +108,7 @@ func (h *ProductHandler) GetProductsByCategory(c *gin.Context) {
 
 func (h *ProductHandler) GetProductByID(c *gin.Context) {
 	id := c.Param("id")
-	product, err := h.productService.GetProductByID(id)
+	product, err := h.productService.GetProductByID(id, c.GetString("userRole") == "admin")
 	if err != nil || product == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Product not found"})
 		return

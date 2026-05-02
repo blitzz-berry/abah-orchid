@@ -3,7 +3,6 @@ package middleware
 import (
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -26,13 +25,10 @@ func AuthMiddleware() gin.HandlerFunc {
 		}
 
 		tokenString := parts[1]
-		jwtSecret := os.Getenv("JWT_SECRET")
-		if jwtSecret == "" {
-			if config.IsProduction() {
-				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "JWT_SECRET is required"})
-				return
-			}
-			jwtSecret = "supersecretkey"
+		jwtSecret, err := config.RequiredSecret("JWT_SECRET", 32)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "JWT_SECRET is required"})
+			return
 		}
 
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {

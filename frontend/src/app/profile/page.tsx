@@ -71,8 +71,7 @@ export default function ProfilePage() {
       const res = await api.put("/auth/me", profileForm);
       const updatedUser = res.data.data || res.data;
       if (user) {
-        const token = localStorage.getItem("access_token") || "";
-        login({ ...user, ...updatedUser }, token);
+        login({ ...user, ...updatedUser });
       }
       setIsEditingProfile(false);
     } catch (e: any) {
@@ -156,7 +155,7 @@ export default function ProfilePage() {
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-2xl p-6 mb-6">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-4">
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[var(--color-brand-400)] to-[var(--color-leaf-500)] flex items-center justify-center text-white text-2xl font-bold">
+              <div className="w-16 h-16 rounded-2xl bg-[var(--color-brand-600)] flex items-center justify-center text-white text-2xl font-bold">
                 {user.full_name?.charAt(0)?.toUpperCase() || "U"}
               </div>
               <div>

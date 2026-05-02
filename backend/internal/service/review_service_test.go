@@ -39,6 +39,10 @@ func (r *fakeOrderRepo) CreateOrderWithTx(*model.Order, string) error {
 	return nil
 }
 
+func (r *fakeOrderRepo) CreateOrderFromCartItemsWithTx(*model.Order, string, []string) error {
+	return nil
+}
+
 func (r *fakeOrderRepo) GetOrderByID(string) (*model.Order, error) {
 	return r.order, r.err
 }

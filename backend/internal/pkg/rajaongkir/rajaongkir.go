@@ -41,32 +41,20 @@ func GetProvinces() (interface{}, error) {
 	client := &http.Client{Timeout: requestTimeout}
 	res, err := client.Do(req)
 	if err != nil {
-		if !config.IsProduction() {
-			return fallbackProvinces(), nil
-		}
-		return nil, err
+		return fallbackOnRajaError(fallbackProvinces(), err)
 	}
 	defer res.Body.Close()
 
 	var result map[string]interface{}
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		if !config.IsProduction() {
-			return fallbackProvinces(), nil
-		}
-		return nil, err
+		return fallbackOnRajaError(fallbackProvinces(), err)
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
-		if !config.IsProduction() {
-			return fallbackProvinces(), nil
-		}
-		return nil, err
+		return fallbackOnRajaError(fallbackProvinces(), err)
 	}
 	if !isRajaOngkirSuccess(result) {
-		if !config.IsProduction() {
-			return fallbackProvinces(), nil
-		}
-		return nil, fmt.Errorf("rajaongkir provinces request failed")
+		return fallbackOnRajaError(fallbackProvinces(), fmt.Errorf("rajaongkir provinces request failed"))
 	}
 
 	return result, nil
@@ -84,32 +72,20 @@ func GetCities(provinceID string) (interface{}, error) {
 	client := &http.Client{Timeout: requestTimeout}
 	res, err := client.Do(req)
 	if err != nil {
-		if !config.IsProduction() {
-			return fallbackCities(provinceID), nil
-		}
-		return nil, err
+		return fallbackOnRajaError(fallbackCities(provinceID), err)
 	}
 	defer res.Body.Close()
 
 	var result map[string]interface{}
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		if !config.IsProduction() {
-			return fallbackCities(provinceID), nil
-		}
-		return nil, err
+		return fallbackOnRajaError(fallbackCities(provinceID), err)
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
-		if !config.IsProduction() {
-			return fallbackCities(provinceID), nil
-		}
-		return nil, err
+		return fallbackOnRajaError(fallbackCities(provinceID), err)
 	}
 	if !isRajaOngkirSuccess(result) {
-		if !config.IsProduction() {
-			return fallbackCities(provinceID), nil
-		}
-		return nil, fmt.Errorf("rajaongkir cities request failed")
+		return fallbackOnRajaError(fallbackCities(provinceID), fmt.Errorf("rajaongkir cities request failed"))
 	}
 
 	return result, nil
@@ -147,32 +123,20 @@ func GetCost(payload CostPayload) (interface{}, error) {
 	client := &http.Client{Timeout: requestTimeout}
 	res, err := client.Do(req)
 	if err != nil {
-		if !config.IsProduction() {
-			return fallbackCost(payload), nil
-		}
-		return nil, err
+		return fallbackOnRajaError(fallbackCost(payload), err)
 	}
 	defer res.Body.Close()
 
 	var result map[string]interface{}
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		if !config.IsProduction() {
-			return fallbackCost(payload), nil
-		}
-		return nil, err
+		return fallbackOnRajaError(fallbackCost(payload), err)
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
-		if !config.IsProduction() {
-			return fallbackCost(payload), nil
-		}
-		return nil, err
+		return fallbackOnRajaError(fallbackCost(payload), err)
 	}
 	if !isRajaOngkirSuccess(result) {
-		if !config.IsProduction() {
-			return fallbackCost(payload), nil
-		}
-		return nil, fmt.Errorf("rajaongkir cost request failed")
+		return fallbackOnRajaError(fallbackCost(payload), fmt.Errorf("rajaongkir cost request failed"))
 	}
 
 	return result, nil
@@ -181,6 +145,14 @@ func GetCost(payload CostPayload) (interface{}, error) {
 func shouldUseFallback() bool {
 	key := strings.TrimSpace(os.Getenv("RAJAONGKIR_API_KEY"))
 	return !config.IsProduction() && (key == "" || key == dummyAPIKey)
+}
+
+func fallbackOnRajaError(fallback interface{}, err error) (interface{}, error) {
+	if strings.ToLower(strings.TrimSpace(os.Getenv("RAJAONGKIR_DISABLE_FALLBACK"))) == "true" {
+		return nil, err
+	}
+	log.Printf("rajaongkir provider unavailable, using fallback data: %v", err)
+	return fallback, nil
 }
 
 func isRajaOngkirSuccess(result map[string]interface{}) bool {

@@ -12,6 +12,7 @@ import (
 
 type OrderRepository interface {
 	CreateOrderWithTx(order *model.Order, cartID string) error
+	CreateOrderFromCartItemsWithTx(order *model.Order, cartID string, cartItemIDs []string) error
 	GetOrderByID(id string) (*model.Order, error)
 	GetOrderByIDForUser(id, userID string) (*model.Order, error)
 	GetOrdersByUserID(userID string) ([]model.Order, error)
@@ -35,6 +36,10 @@ func NewOrderRepository(db *gorm.DB) OrderRepository {
 }
 
 func (r *orderRepository) CreateOrderWithTx(order *model.Order, cartID string) error {
+	return r.CreateOrderFromCartItemsWithTx(order, cartID, nil)
+}
+
+func (r *orderRepository) CreateOrderFromCartItemsWithTx(order *model.Order, cartID string, cartItemIDs []string) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		for _, item := range order.Items {
 			result := tx.Model(&model.Inventory{}).
@@ -55,14 +60,18 @@ func (r *orderRepository) CreateOrderWithTx(order *model.Order, cartID string) e
 		history := model.OrderStatusHistory{
 			OrderID:    order.ID,
 			FromStatus: "",
-			ToStatus:   "PENDING_PAYMENT",
+			ToStatus:   order.Status,
 			Note:       "System Order Creation",
 		}
 		if err := tx.Create(&history).Error; err != nil {
 			return err
 		}
 
-		if err := tx.Where("cart_id = ?", cartID).Delete(&model.CartItem{}).Error; err != nil {
+		deleteQuery := tx.Where("cart_id = ?", cartID)
+		if len(cartItemIDs) > 0 {
+			deleteQuery = deleteQuery.Where("id IN ?", cartItemIDs)
+		}
+		if err := deleteQuery.Delete(&model.CartItem{}).Error; err != nil {
 			return err
 		}
 
@@ -73,19 +82,89 @@ func (r *orderRepository) CreateOrderWithTx(order *model.Order, cartID string) e
 func (r *orderRepository) GetOrderByID(id string) (*model.Order, error) {
 	var order model.Order
 	err := r.db.Preload("Items").Preload("Payments").Preload("User").Where("id = ?", id).First(&order).Error
+	if err == nil {
+		err = r.hydrateOrderItemImages([]*model.Order{&order})
+	}
 	return &order, err
 }
 
 func (r *orderRepository) GetOrderByIDForUser(id, userID string) (*model.Order, error) {
 	var order model.Order
 	err := r.db.Preload("Items").Preload("Payments").Preload("User").Where("id = ? AND user_id = ?", id, userID).First(&order).Error
+	if err == nil {
+		err = r.hydrateOrderItemImages([]*model.Order{&order})
+	}
 	return &order, err
 }
 
 func (r *orderRepository) GetOrdersByUserID(userID string) ([]model.Order, error) {
 	var orders []model.Order
-	err := r.db.Where("user_id = ?", userID).Order("created_at desc").Preload("Items").Find(&orders).Error
+	err := r.db.Where("user_id = ?", userID).
+		Order("created_at desc").
+		Preload("Items").
+		Preload("Payments").
+		Find(&orders).Error
+	if err == nil {
+		orderRefs := make([]*model.Order, 0, len(orders))
+		for i := range orders {
+			orderRefs = append(orderRefs, &orders[i])
+		}
+		err = r.hydrateOrderItemImages(orderRefs)
+	}
 	return orders, err
+}
+
+func (r *orderRepository) hydrateOrderItemImages(orders []*model.Order) error {
+	productIDs := make(map[string]struct{})
+	for _, order := range orders {
+		if order == nil {
+			continue
+		}
+		for _, item := range order.Items {
+			if item.ProductImageURL == "" {
+				productIDs[item.ProductID.String()] = struct{}{}
+			}
+		}
+	}
+	if len(productIDs) == 0 {
+		return nil
+	}
+
+	ids := make([]string, 0, len(productIDs))
+	for id := range productIDs {
+		ids = append(ids, id)
+	}
+
+	var images []model.ProductImage
+	if err := r.db.
+		Where("product_id IN ?", ids).
+		Order("is_primary desc, sort_order asc, created_at asc").
+		Find(&images).Error; err != nil {
+		return err
+	}
+
+	imageByProductID := make(map[string]string, len(images))
+	for _, image := range images {
+		productID := image.ProductID.String()
+		if image.ImageURL != "" {
+			if _, exists := imageByProductID[productID]; !exists {
+				imageByProductID[productID] = image.ImageURL
+			}
+		}
+	}
+
+	for _, order := range orders {
+		if order == nil {
+			continue
+		}
+		for i := range order.Items {
+			if order.Items[i].ProductImageURL == "" {
+				order.Items[i].ProductImageURL = imageByProductID[order.Items[i].ProductID.String()]
+			}
+		}
+	}
+
+	return nil
 }
 
 func (r *orderRepository) UpdateOrderStatus(orderID, status string) error {

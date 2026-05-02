@@ -12,7 +12,7 @@ import (
 
 type ProductRepository interface {
 	FindAll(query ProductQuery) ([]model.Product, int64, error)
-	FindByID(id string) (*model.Product, error)
+	FindByID(id string, includeInactive bool) (*model.Product, error)
 	Create(product *model.Product) error
 	Update(product *model.Product) error
 	Delete(id string) error
@@ -109,9 +109,12 @@ func (r *productRepository) FindAll(query ProductQuery) ([]model.Product, int64,
 	return products, total, err
 }
 
-func (r *productRepository) FindByID(id string) (*model.Product, error) {
+func (r *productRepository) FindByID(id string, includeInactive bool) (*model.Product, error) {
 	var product model.Product
 	query := r.db.Preload("Category").Preload("Images").Preload("Inventory")
+	if !includeInactive {
+		query = query.Where("status = ?", "active")
+	}
 	if _, err := uuid.Parse(id); err == nil {
 		query = query.Where("id = ?", id)
 	} else {
@@ -241,13 +244,13 @@ func (r *productRepository) AdjustStock(productID string, newQuantity int, admin
 			diff = -diff
 		}
 
-		var performedBy uuid.UUID
+		var performedBy *uuid.UUID
 		if adminID != "" {
 			parsedID, err := uuid.Parse(adminID)
 			if err != nil {
 				return err
 			}
-			performedBy = parsedID
+			performedBy = &parsedID
 		}
 
 		// Simplified inserting a movement string parsed properly later

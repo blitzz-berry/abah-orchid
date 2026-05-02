@@ -1,45 +1,46 @@
 import { create } from 'zustand';
+import api, { clearAccessToken, clearLegacyAuthStorage, setAccessToken } from '@/lib/api';
 import type { User } from '@/types';
 
 interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
-  login: (user: User, token: string, refreshToken?: string) => void;
-  logout: () => void;
-  hydrate: () => void;
+  isHydrated: boolean;
+  login: (user: User, token?: string) => void;
+  logout: () => Promise<void>;
+  hydrate: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   isAuthenticated: false,
-  login: (user, token, refreshToken) => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('access_token', token);
-      if (refreshToken) localStorage.setItem('refresh_token', refreshToken);
-      localStorage.setItem('user', JSON.stringify(user));
-    }
+  isHydrated: false,
+  login: (user, token) => {
+    if (token) setAccessToken(token);
+    clearLegacyAuthStorage();
     set({ user, isAuthenticated: true });
   },
-  logout: () => {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-      localStorage.removeItem('user');
+  logout: async () => {
+    try {
+      await api.post('/auth/logout');
+    } catch {
+      void 0;
     }
-    set({ user: null, isAuthenticated: false });
+    clearAccessToken();
+    clearLegacyAuthStorage();
+    set({ user: null, isAuthenticated: false, isHydrated: true });
   },
-  hydrate: () => {
-    if (typeof window !== 'undefined') {
-      const token = localStorage.getItem('access_token');
-      const userStr = localStorage.getItem('user');
-      if (token && userStr) {
-        try {
-          const user = JSON.parse(userStr) as User;
-          set({ user, isAuthenticated: true });
-        } catch {
-          set({ user: null, isAuthenticated: false });
-        }
-      }
+  hydrate: async () => {
+    clearLegacyAuthStorage();
+    try {
+      const response = await api.post('/auth/refresh');
+      const data = response.data.data || response.data;
+      if (!data.access_token || !data.user) throw new Error('Incomplete auth response');
+      setAccessToken(data.access_token);
+      set({ user: data.user as User, isAuthenticated: true, isHydrated: true });
+    } catch {
+      clearAccessToken();
+      set({ user: null, isAuthenticated: false, isHydrated: true });
     }
   },
 }));

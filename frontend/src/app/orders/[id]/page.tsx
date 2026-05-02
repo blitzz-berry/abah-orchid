@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Package, Truck, MapPin, CreditCard, CheckCircle, Star, Upload, ExternalLink, Clock } from "lucide-react";
@@ -8,6 +8,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import Navbar from "@/components/ui/Navbar";
 import Footer from "@/components/ui/Footer";
 import api from "@/lib/api";
+import { openUploadURL, resolveUploadURL } from "@/lib/uploads";
 import { motion } from "framer-motion";
 import type { Order, Payment } from "@/types";
 
@@ -16,6 +17,9 @@ type ReviewDraft = {
   comment: string;
   submitted: boolean;
 };
+
+const MAX_PAYMENT_PROOF_SIZE = 10 * 1024 * 1024;
+const ACCEPTED_PAYMENT_PROOF_TYPES = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
 
 export default function OrderDetailPage() {
   const { id } = useParams();
@@ -27,6 +31,7 @@ export default function OrderDetailPage() {
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [isUploadingProof, setIsUploadingProof] = useState(false);
   const [reviewForms, setReviewForms] = useState<Record<string, ReviewDraft>>({});
+  const proofInputRef = useRef<HTMLInputElement | null>(null);
   const { isAuthenticated } = useAuthStore();
 
   useEffect(() => {
@@ -52,10 +57,15 @@ export default function OrderDetailPage() {
         setIsLoading(false);
       }
     };
-    if (id) {
-      void fetchOrder();
-    }
+    if (id) void fetchOrder();
   }, [id, isAuthenticated, router]);
+
+  const activePayment = payment || order?.payments?.[0] || order?.payment || null;
+  const isManualTransfer = activePayment?.method === "manual_bank_transfer" || activePayment?.method === "bank_transfer";
+  const isMidtransPayment = activePayment?.provider === "midtrans";
+  const canUploadProof = order?.status === "PENDING_PAYMENT" && isManualTransfer && ["PENDING", "WAITING_PROOF"].includes(activePayment?.status || "");
+  const proofImageURL = activePayment?.proof_image_url ? resolveUploadURL(activePayment.proof_image_url) : "";
+  const proofUploadMessage = getProofUploadMessage(order?.status || "", activePayment);
 
   const handleConfirmDelivery = async () => {
     setIsConfirming(true);
@@ -87,7 +97,6 @@ export default function OrderDetailPage() {
       alert("Pilih rating dulu.");
       return;
     }
-
     try {
       await api.post("/reviews", {
         order_id: id,
@@ -101,21 +110,44 @@ export default function OrderDetailPage() {
     }
   };
 
-  const handleUploadProof = async () => {
-    if (!proofFile || !order) {
-      alert("Pilih file bukti transfer dulu.");
+  const handleUploadProof = () => {
+    if (!canUploadProof || isUploadingProof) return;
+    proofInputRef.current?.click();
+  };
+
+  const handleProofFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] || null;
+    if (!file) {
+      setProofFile(null);
+      return;
+    }
+    if (!order) {
+      alert("Data pesanan belum tersedia.");
+      event.target.value = "";
+      return;
+    }
+    if (!ACCEPTED_PAYMENT_PROOF_TYPES.includes(file.type)) {
+      alert("Format file harus JPG, PNG, WEBP, atau PDF.");
+      event.target.value = "";
+      setProofFile(null);
+      return;
+    }
+    if (file.size <= 0 || file.size > MAX_PAYMENT_PROOF_SIZE) {
+      alert("Ukuran file harus antara 1 byte sampai 10MB.");
+      event.target.value = "";
+      setProofFile(null);
       return;
     }
 
     const payload = new FormData();
-    payload.append("file", proofFile);
+    payload.append("file", file);
+    setProofFile(file);
     setIsUploadingProof(true);
     try {
-      const response = await api.post(`/payments/${order.id}/upload-proof-file`, payload, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      const response = await api.post(`/payments/${order.id}/upload-proof-file`, payload);
       setPayment(response.data.data?.payment || response.data.data || null);
       setProofFile(null);
+      event.target.value = "";
       alert("Bukti transfer berhasil diupload. Admin akan konfirmasi pembayaran.");
     } catch (e: any) {
       alert("Upload bukti gagal: " + (e.response?.data?.error || e.message));
@@ -129,11 +161,18 @@ export default function OrderDetailPage() {
     try {
       const response = await api.post(`/payments/${order.id}/pay`);
       const paymentURL = response.data.payment_url || response.data.data?.payment_url;
-      if (paymentURL) {
-        window.location.href = paymentURL;
-      }
+      if (paymentURL) window.location.href = paymentURL;
     } catch (e: any) {
       alert("Gagal membuka pembayaran: " + (e.response?.data?.error || e.message));
+    }
+  };
+
+  const handleOpenProof = async () => {
+    if (!activePayment?.proof_image_url) return;
+    try {
+      await openUploadURL(activePayment.proof_image_url);
+    } catch (e: any) {
+      alert("Gagal membuka bukti transfer: " + (e.response?.data?.error || e.message));
     }
   };
 
@@ -141,7 +180,9 @@ export default function OrderDetailPage() {
     return (
       <div className="flex flex-col min-h-screen bg-[var(--bg)]">
         <Navbar />
-        <div className="flex-1 flex items-center justify-center"><div className="w-10 h-10 border-4 border-gray-200 border-t-[var(--color-leaf-500)] rounded-full animate-spin" /></div>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="w-10 h-10 border-4 border-gray-200 border-t-[var(--color-leaf-500)] rounded-full animate-spin" />
+        </div>
       </div>
     );
   }
@@ -159,20 +200,20 @@ export default function OrderDetailPage() {
     );
   }
 
-  const activePayment = payment || order.payments?.[0] || order.payment || null;
-  const isManualTransfer = activePayment?.method === "manual_bank_transfer" || activePayment?.method === "bank_transfer";
-  const isMidtransPayment = activePayment?.provider === "midtrans";
-  const canUploadProof = order.status === "PENDING_PAYMENT" && isManualTransfer && activePayment?.status !== "WAITING_CONFIRMATION";
-
   return (
     <div className="flex flex-col min-h-screen bg-[var(--bg)] text-[var(--fg)]">
       <Navbar />
       <main className="flex-1 max-w-4xl mx-auto w-full px-4 sm:px-6 lg:px-8 pt-24 pb-16">
-        <Link href="/orders" className="flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-[var(--color-brand-600)] mb-6"><ArrowLeft className="w-4 h-4" /> Kembali ke Pesanan</Link>
+        <Link href="/orders" className="flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-[var(--color-brand-600)] mb-6">
+          <ArrowLeft className="w-4 h-4" /> Kembali ke Pesanan
+        </Link>
 
         <div className="flex items-center justify-between mb-8">
-          <div><h1 className="text-2xl font-extrabold">{order.order_number}</h1><p className="text-sm text-gray-500">{new Date(order.created_at || "").toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" })}</p></div>
-          <span className="px-3 py-1 rounded-full text-sm font-bold bg-[var(--color-brand-50)] text-[var(--color-brand-600)] dark:bg-[var(--color-brand-900)] dark:text-[var(--color-brand-200)]">{order.status.replace(/_/g, " ")}</span>
+          <div>
+            <h1 className="text-2xl font-extrabold">{order.order_number}</h1>
+            <p className="text-sm text-gray-500">{new Date(order.created_at || "").toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" })}</p>
+          </div>
+          <span className="px-3 py-1 rounded-full text-sm font-bold bg-[var(--color-brand-50)] text-[var(--color-brand-600)] dark:bg-[var(--color-brand-900)] dark:text-[var(--color-brand-200)]">{orderStatusLabel(order.status)}</span>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -183,8 +224,17 @@ export default function OrderDetailPage() {
                 {order.items?.map((item) => (
                   <div key={item.id} className="p-3 border border-gray-100 dark:border-gray-800 rounded-xl">
                     <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden shrink-0"><img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(item.product_name)}&background=random`} alt={item.product_name} className="w-full h-full object-cover" /></div>
-                      <div className="flex-1 min-w-0"><div className="font-medium text-sm truncate">{item.product_name}</div><div className="text-xs text-gray-500">{item.quantity} x Rp {item.product_price.toLocaleString("id-ID")}</div></div>
+                      <div className="w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden shrink-0">
+                        {item.product_image_url ? (
+                          <img src={resolveUploadURL(item.product_image_url)} alt={item.product_name} className="w-full h-full object-cover" />
+                        ) : (
+                          <Package className="w-5 h-5 text-gray-400 m-3.5" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-sm truncate">{item.product_name}</div>
+                        <div className="text-xs text-gray-500">{item.quantity} x Rp {item.product_price.toLocaleString("id-ID")}</div>
+                      </div>
                       <div className="font-bold text-sm">Rp {item.subtotal.toLocaleString("id-ID")}</div>
                     </div>
                     {order.status === "COMPLETED" && (
@@ -213,7 +263,7 @@ export default function OrderDetailPage() {
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="glass rounded-2xl p-5">
               <h3 className="font-bold mb-4 flex items-center gap-2"><MapPin className="w-5 h-5 text-[var(--color-leaf-600)]" /> Pengiriman</h3>
               <div className="text-sm space-y-1">
-                <p className="font-medium">{order.shipping_name} • {order.shipping_phone}</p>
+                <p className="font-medium">{order.shipping_name} - {order.shipping_phone}</p>
                 <p className="text-gray-500">{order.shipping_address}</p>
                 <p className="text-gray-500">{order.shipping_city}, {order.shipping_province} {order.shipping_postal_code}</p>
                 {order.courier_code && <p className="mt-2"><span className="font-medium uppercase">{order.courier_code}</span> {order.courier_service}</p>}
@@ -255,19 +305,26 @@ export default function OrderDetailPage() {
                     </div>
                   )}
 
-                  {activePayment.proof_image_url && (
-                    <a href={activePayment.proof_image_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm font-bold text-[var(--color-brand-600)] hover:underline">
+                  {proofImageURL && (
+                    <button type="button" onClick={handleOpenProof} className="inline-flex items-center gap-2 text-sm font-bold text-[var(--color-brand-600)] hover:underline">
                       Lihat bukti transfer <ExternalLink className="w-4 h-4" />
-                    </a>
+                    </button>
                   )}
 
-                  {canUploadProof && (
+                  {isManualTransfer && (
                     <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 p-4">
-                      <label className="text-sm font-medium mb-2 block">Upload Bukti Transfer</label>
-                      <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setProofFile(event.target.files?.[0] || null)} className="w-full text-sm mb-3" />
-                      <button onClick={handleUploadProof} disabled={!proofFile || isUploadingProof} className="px-4 py-2 rounded-xl bg-black text-white dark:bg-white dark:text-black text-sm font-bold inline-flex items-center gap-2 disabled:opacity-50">
-                        <Upload className="w-4 h-4" /> {isUploadingProof ? "Mengupload..." : "Upload Bukti"}
-                      </button>
+                      <div className="text-sm font-medium mb-3">Upload Bukti Transfer</div>
+                      {canUploadProof ? (
+                        <>
+                          <input ref={proofInputRef} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={handleProofFileChange} className="hidden" />
+                          {proofFile && <p className="text-xs text-gray-500 mb-3">{proofFile.name}</p>}
+                          <button onClick={handleUploadProof} disabled={isUploadingProof} className="px-4 py-2 rounded-xl bg-black text-white dark:bg-white dark:text-black text-sm font-bold inline-flex items-center gap-2 disabled:opacity-50">
+                            <Upload className="w-4 h-4" /> {isUploadingProof ? "Mengupload..." : "Upload Bukti"}
+                          </button>
+                        </>
+                      ) : (
+                        <p className="text-sm text-gray-500">{proofUploadMessage}</p>
+                      )}
                     </div>
                   )}
 
@@ -320,8 +377,6 @@ function paymentMethodLabel(method: string) {
       return "E-Wallet Midtrans";
     case "midtrans_card":
       return "Kartu Kredit/Debit";
-    case "cod":
-      return "COD";
     case "midtrans":
       return "Midtrans";
     default:
@@ -341,6 +396,40 @@ function paymentStatusLabel(status: string) {
       return "Dibayar";
     case "EXPIRED":
       return "Kedaluwarsa";
+    case "REFUNDED":
+      return "Refund";
+    default:
+      return status.replace(/_/g, " ");
+  }
+}
+
+function getProofUploadMessage(orderStatus: string, payment: Payment | null) {
+  if (!payment) return "Data pembayaran belum tersedia.";
+  if (payment.status === "WAITING_CONFIRMATION") return "Bukti transfer sudah diupload dan sedang menunggu konfirmasi admin.";
+  if (payment.status === "PAID") return "Pembayaran sudah dikonfirmasi.";
+  if (payment.status === "EXPIRED") return "Pembayaran sudah kedaluwarsa.";
+  if (orderStatus !== "PENDING_PAYMENT") return `Upload bukti hanya tersedia saat status pesanan ${orderStatusLabel("PENDING_PAYMENT")}. Status sekarang: ${orderStatusLabel(orderStatus)}.`;
+  return "Upload bukti belum tersedia untuk pembayaran ini.";
+}
+
+function orderStatusLabel(status: string) {
+  switch (status) {
+    case "PENDING_PAYMENT":
+      return "Menunggu Pembayaran";
+    case "PAID":
+      return "Dibayar";
+    case "PROCESSING":
+      return "Diproses";
+    case "SHIPPED":
+      return "Dikirim";
+    case "DELIVERED":
+      return "Terkirim";
+    case "COMPLETED":
+      return "Selesai";
+    case "CANCELLED":
+      return "Dibatalkan";
+    case "RETURN_REQUESTED":
+      return "Pengajuan Retur";
     case "REFUNDED":
       return "Refund";
     default:

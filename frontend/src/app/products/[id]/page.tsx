@@ -4,17 +4,19 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import api from "@/lib/api";
-import { ShoppingCart, Info, CheckCircle2, Tag, Leaf, Ruler, Flower2, Weight, Heart, Star } from "lucide-react";
+import { ShoppingCart, Info, CheckCircle2, Tag, Leaf, Ruler, Flower2, Weight, Heart, Star, ArrowRight } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { motion } from "framer-motion";
 import Navbar from "@/components/ui/Navbar";
 import Footer from "@/components/ui/Footer";
+import { resolveUploadURL } from "@/lib/uploads";
 import type { Product, Review } from "@/types";
 
 export default function ProductDetailPage() {
   const { id } = useParams();
   const router = useRouter();
   const [product, setProduct] = useState<Product | null>(null);
+  const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
@@ -27,12 +29,26 @@ export default function ProductDetailPage() {
   useEffect(() => {
     const fetchDetail = async () => {
       try {
-        const [productRes, reviewRes] = await Promise.all([
+        const [productRes, reviewRes, productsRes] = await Promise.allSettled([
           api.get(`/products/${id}`),
           api.get(`/reviews/product/${id}`),
+          api.get("/products"),
         ]);
-        setProduct(productRes.data.data);
-        setReviews(reviewRes.data.data || []);
+        if (productRes.status !== "fulfilled") return;
+
+        const nextProduct = productRes.value.data.data as Product;
+        const productList = productsRes.status === "fulfilled" ? (productsRes.value.data.data || []) as Product[] : [];
+        const currentID = String(id);
+        const currentCategoryKey = nextProduct.category_id || nextProduct.category?.id || nextProduct.category?.slug || nextProduct.category?.name;
+        const sameCategory = productList.filter((item) => {
+          const categoryKey = item.category_id || item.category?.id || item.category?.slug || item.category?.name;
+          return item.id !== currentID && categoryKey && categoryKey === currentCategoryKey;
+        });
+        const otherProducts = productList.filter((item) => item.id !== currentID && !sameCategory.some((related) => related.id === item.id));
+
+        setProduct(nextProduct);
+        setReviews(reviewRes.status === "fulfilled" ? reviewRes.value.data.data || [] : []);
+        setRelatedProducts([...sameCategory, ...otherProducts].slice(0, 8));
 
         if (isAuthenticated) {
           const wishlistRes = await api.get(`/wishlist/${id}/status`);
@@ -55,9 +71,17 @@ export default function ProductDetailPage() {
       router.push("/login");
       return;
     }
+    if (!product?.id) {
+      alert("Produk belum siap dimasukkan ke keranjang.");
+      return;
+    }
+    if (quantity < 1 || quantity > stock) {
+      alert("Jumlah produk tidak valid atau melebihi stok.");
+      return;
+    }
     setIsAdding(true);
     try {
-      await api.post("/cart/items", { product_id: product!.id, quantity, note });
+      await api.post("/cart/items", { product_id: product.id, quantity, note });
       setAddedSuccess(true);
       setTimeout(() => setAddedSuccess(false), 3000);
     } catch (e: any) {
@@ -112,7 +136,7 @@ export default function ProductDetailPage() {
     );
   }
 
-  const imgUrl = product.images?.[0]?.image_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(product.name)}&size=512&background=random`;
+  const imgUrl = productImageURL(product);
   const stock = product.inventory?.quantity || 0;
 
   return (
@@ -229,8 +253,56 @@ export default function ProductDetailPage() {
             </motion.div>
           </div>
         </div>
+
+        {relatedProducts.length > 0 && (
+          <section className="mt-14 border-t border-gray-200 dark:border-gray-800 pt-10">
+            <div className="flex items-end justify-between gap-4 mb-5">
+              <div>
+                <h2 className="text-2xl font-extrabold tracking-tight">Produk Lainnya</h2>
+                <p className="text-sm text-gray-500 mt-1">Lihat koleksi lain tanpa balik ke katalog.</p>
+              </div>
+              <Link href="/products" className="hidden sm:inline-flex items-center gap-1 text-sm font-bold text-[var(--color-brand-600)] hover:underline">
+                Lihat katalog <ArrowRight className="w-4 h-4" />
+              </Link>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {relatedProducts.map((item, idx) => (
+                <ProductSuggestionCard key={item.id} product={item} idx={idx} />
+              ))}
+            </div>
+          </section>
+        )}
       </main>
       <Footer />
     </div>
   );
+}
+
+function ProductSuggestionCard({ product, idx }: { product: Product; idx: number }) {
+  const imageURL = productImageURL(product);
+  const stock = product.inventory?.quantity || 0;
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.03 }}>
+      <Link href={`/products/${product.id}`} className="group block rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-zinc-900 overflow-hidden hover:shadow-lg transition-shadow h-full">
+        <div className="aspect-square bg-gray-100 dark:bg-gray-800 overflow-hidden relative">
+          <img src={imageURL} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+          {product.unit_type === "PER_BATCH" && <span className="absolute top-3 left-3 bg-[var(--color-leaf-500)] text-white text-[10px] font-bold px-2 py-1 rounded-md">B2B</span>}
+        </div>
+        <div className="p-4">
+          <div className="text-xs text-gray-500 mb-1 truncate">{product.category?.name || "Anggrek"}</div>
+          <h3 className="font-bold text-sm leading-tight line-clamp-2 min-h-10">{product.name}</h3>
+          <div className="mt-3 flex items-end justify-between gap-2">
+            <div className="text-[var(--color-brand-600)] font-extrabold text-sm">Rp {product.price.toLocaleString("id-ID")}</div>
+            <div className="text-[11px] text-gray-400 shrink-0">{stock} stok</div>
+          </div>
+        </div>
+      </Link>
+    </motion.div>
+  );
+}
+
+function productImageURL(product: Product) {
+  const image = product.images?.find((item) => item.is_primary)?.image_url || product.images?.[0]?.image_url;
+  return image ? resolveUploadURL(image) : `https://ui-avatars.com/api/?name=${encodeURIComponent(product.name)}&size=512&background=random`;
 }

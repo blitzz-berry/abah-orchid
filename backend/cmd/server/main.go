@@ -4,7 +4,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -21,6 +20,13 @@ import (
 
 func main() {
 	config.LoadEnv()
+	if _, err := config.RequiredSecret("JWT_SECRET", 32); err != nil {
+		log.Fatalf("Invalid configuration: %v", err)
+	}
+	allowedOrigins, err := config.CORSAllowedOrigins()
+	if err != nil {
+		log.Fatalf("Invalid CORS configuration: %v", err)
+	}
 
 	// Initialize Database and Midtrans
 	config.InitDB()
@@ -28,14 +34,11 @@ func main() {
 
 	// Setup Gin router
 	r := gin.Default()
+	r.MaxMultipartMemory = 8 << 20
 	r.Use(middleware.SecurityHeaders())
 	r.StaticFS("/uploads", storage.PublicFileSystem())
 
 	// Configure CORS
-	allowedOrigins := []string{"http://localhost:3000"}
-	if envOrigins := os.Getenv("CORS_ALLOWED_ORIGINS"); envOrigins != "" {
-		allowedOrigins = strings.Split(envOrigins, ",")
-	}
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     allowedOrigins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
@@ -66,6 +69,7 @@ func main() {
 	reviewHandler := handler.NewReviewHandler(reviewSvc)
 
 	shippingHandler := handler.NewShippingHandler()
+	notificationHandler := handler.NewNotificationHandler(config.DB)
 	if os.Getenv("PAYMENT_EXPIRY_WORKER") == "true" {
 		go func() {
 			ticker := time.NewTicker(15 * time.Minute)
@@ -187,8 +191,16 @@ func main() {
 		{
 			paymentRoutes.POST("/:order_id/pay", orderHandler.InitiatePayment)
 			paymentRoutes.GET("/:order_id/status", orderHandler.GetPaymentStatus)
+			paymentRoutes.GET("/:order_id/proof-file/:filename", uploadHandler.DownloadPaymentProof)
 			paymentRoutes.POST("/:order_id/upload-proof", orderHandler.UploadPaymentProof)
-			paymentRoutes.POST("/:order_id/upload-proof-file", uploadHandler.UploadPaymentProof)
+			paymentRoutes.POST("/:order_id/upload-proof-file", middleware.BodyLimit(storage.MaxPaymentProofSize+(1<<20)), uploadHandler.UploadPaymentProof)
+		}
+
+		notificationRoutes := api.Group("/notifications", middleware.AuthMiddleware())
+		{
+			notificationRoutes.GET("", notificationHandler.GetNotifications)
+			notificationRoutes.PATCH("/:id/read", notificationHandler.MarkRead)
+			notificationRoutes.PATCH("/read-all", notificationHandler.MarkAllRead)
 		}
 
 		adminHandler := handler.NewAdminHandler(config.DB, orderSvc)
@@ -204,12 +216,13 @@ func main() {
 			adminRoutes.GET("/analytics/customers", adminHandler.GetCustomerAnalytics)
 			adminRoutes.GET("/analytics/trends", adminHandler.GetTrendAnalytics)
 			adminRoutes.GET("/products", productHandler.GetAllProducts)
+			adminRoutes.GET("/products/:id", productHandler.GetProductByID)
 			adminRoutes.POST("/products", productHandler.CreateProduct)
 			adminRoutes.PUT("/products/:id", productHandler.UpdateProduct)
 			adminRoutes.DELETE("/products/:id", productHandler.DeleteProduct)
 			adminRoutes.POST("/products/:id/adjust-stock", productHandler.AdjustStock)
 			adminRoutes.POST("/products/:id/images", adminHandler.AddProductImage)
-			adminRoutes.POST("/products/:id/images/upload", uploadHandler.UploadProductImage)
+			adminRoutes.POST("/products/:id/images/upload", middleware.BodyLimit(storage.MaxImageSize+(1<<20)), uploadHandler.UploadProductImage)
 			adminRoutes.DELETE("/products/:id/images/:image_id", adminHandler.DeleteProductImage)
 			adminRoutes.GET("/categories", productHandler.GetAllCategories)
 			adminRoutes.POST("/categories", adminHandler.CreateCategory)
@@ -253,8 +266,9 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
+	server := config.NewHTTPServer(":"+port, r)
 	log.Printf("Server is running on port %s...", port)
-	if err := r.Run(":" + port); err != nil {
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Failed to run server: %v", err)
 	}
 }

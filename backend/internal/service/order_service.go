@@ -56,19 +56,29 @@ func (s *orderService) Checkout(userID string, req request.CheckoutRequest) (*mo
 
 	var subtotal float64
 	var orderItems []model.OrderItem
+	selectedItemIDs := normalizeIDSet(req.CartItemIDs)
 
 	for _, item := range cart.Items {
+		if len(selectedItemIDs) > 0 {
+			if _, ok := selectedItemIDs[item.ID.String()]; !ok {
+				continue
+			}
+		}
 		itemSubtotal := item.Product.Price * float64(item.Quantity)
 		subtotal += itemSubtotal
 
 		orderItems = append(orderItems, model.OrderItem{
-			ProductID:    item.ProductID,
-			ProductName:  item.Product.Name,
-			ProductPrice: item.Product.Price,
-			UnitType:     item.Product.UnitType,
-			Quantity:     item.Quantity,
-			Subtotal:     itemSubtotal,
+			ProductID:       item.ProductID,
+			ProductName:     item.Product.Name,
+			ProductImageURL: primaryProductImageURL(item.Product.Images),
+			ProductPrice:    item.Product.Price,
+			UnitType:        item.Product.UnitType,
+			Quantity:        item.Quantity,
+			Subtotal:        itemSubtotal,
 		})
+	}
+	if len(orderItems) == 0 {
+		return nil, "", errors.New("no selected cart items found")
 	}
 
 	discount, err := s.calculateDiscount(req.CouponCode, subtotal)
@@ -84,6 +94,9 @@ func (s *orderService) Checkout(userID string, req request.CheckoutRequest) (*mo
 	if paymentMethod == "" {
 		paymentMethod = "midtrans"
 	}
+	if !isSupportedPaymentMethod(paymentMethod) {
+		return nil, "", errors.New("unsupported payment method")
+	}
 	packingType := req.PackingType
 	if packingType == "" {
 		packingType = "standard"
@@ -91,6 +104,7 @@ func (s *orderService) Checkout(userID string, req request.CheckoutRequest) (*mo
 
 	parsedUserID, _ := uuid.Parse(userID)
 	order := &model.Order{
+		ID:                 uuid.New(),
 		OrderNumber:        fmt.Sprintf("ORD-%s-%s", time.Now().Format("20060102"), uuid.New().String()[:6]),
 		UserID:             parsedUserID,
 		ShippingName:       req.ShippingName,
@@ -116,25 +130,10 @@ func (s *orderService) Checkout(userID string, req request.CheckoutRequest) (*mo
 		Items:              orderItems,
 	}
 
-	if err := s.orderRepo.CreateOrderWithTx(order, cart.ID.String()); err != nil {
+	if err := s.orderRepo.CreateOrderFromCartItemsWithTx(order, cart.ID.String(), req.CartItemIDs); err != nil {
 		return nil, "", err
 	}
 
-	if paymentMethod == "cod" {
-		payment := model.Payment{
-			OrderID:    order.ID,
-			Method:     "cod",
-			Provider:   "manual",
-			Amount:     total,
-			Status:     "PENDING",
-			ExternalID: order.ID.String(),
-			ExpiredAt:  &expiredAt,
-		}
-		if err := s.orderRepo.CreateOrUpdatePayment(&payment); err != nil {
-			return nil, "", err
-		}
-		return order, "", nil
-	}
 	if paymentMethod == "manual_bank_transfer" {
 		payment := model.Payment{
 			OrderID:    order.ID,
@@ -191,6 +190,29 @@ func (s *orderService) Checkout(userID string, req request.CheckoutRequest) (*mo
 	return order, snapResp.RedirectURL, nil
 }
 
+func normalizeIDSet(ids []string) map[string]struct{} {
+	result := map[string]struct{}{}
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			result[id] = struct{}{}
+		}
+	}
+	return result
+}
+
+func primaryProductImageURL(images []model.ProductImage) string {
+	if len(images) == 0 {
+		return ""
+	}
+	for _, image := range images {
+		if image.IsPrimary && image.ImageURL != "" {
+			return image.ImageURL
+		}
+	}
+	return images[0].ImageURL
+}
+
 func (s *orderService) GetOrders(userID string) ([]model.Order, error) {
 	return s.orderRepo.GetOrdersByUserID(userID)
 }
@@ -228,7 +250,10 @@ func (s *orderService) InitiatePayment(orderID, userID string) (*model.Payment, 
 	if existing, err := s.orderRepo.GetPaymentByOrderID(orderID); err == nil && existing.Method != "" {
 		paymentMethod = normalizePaymentMethod(existing.Method)
 	}
-	if paymentMethod == "manual_bank_transfer" || paymentMethod == "cod" {
+	if !isSupportedPaymentMethod(paymentMethod) {
+		return nil, errors.New("unsupported payment method")
+	}
+	if paymentMethod == "manual_bank_transfer" {
 		return nil, errors.New("selected payment method does not use Midtrans payment link")
 	}
 
@@ -279,6 +304,10 @@ func (s *orderService) GetPaymentStatus(orderID, userID string) (*model.Payment,
 }
 
 func (s *orderService) UploadPaymentProof(orderID, userID, proofImageURL string) (*model.Payment, error) {
+	if !isTrustedPaymentProofURL(proofImageURL) {
+		return nil, errors.New("payment proof must be uploaded through the file upload endpoint")
+	}
+
 	order, err := s.orderRepo.GetOrderByIDForUser(orderID, userID)
 	if err != nil {
 		return nil, err
@@ -300,6 +329,17 @@ func (s *orderService) UploadPaymentProof(orderID, userID, proofImageURL string)
 		return nil, err
 	}
 	return payment, nil
+}
+
+func isTrustedPaymentProofURL(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return false
+	}
+	if strings.HasPrefix(value, "/api/v1/payments/") && strings.Contains(value, "/proof-file/") {
+		return true
+	}
+	return false
 }
 
 func (s *orderService) ConfirmManualPayment(orderID string) error {
@@ -357,6 +397,15 @@ func normalizePaymentMethod(method string) string {
 		return "midtrans_card"
 	default:
 		return method
+	}
+}
+
+func isSupportedPaymentMethod(method string) bool {
+	switch normalizePaymentMethod(method) {
+	case "midtrans", "manual_bank_transfer", "midtrans_bank_transfer", "midtrans_ewallet", "midtrans_card":
+		return true
+	default:
+		return false
 	}
 }
 

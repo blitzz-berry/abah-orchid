@@ -79,6 +79,21 @@ Kredensial default sekarang:
 email: admin@orchidmart.local
 password: Admin123!
 
+Akses lokalnya:
+
+  http://localhost
+
+  Link keluar ambil dari log cloudflared:
+
+  docker compose -f docker-compose.prod.yml --env-file .env.production logs -f cloudflared
+ Kalau mau stop semua:
+
+  docker compose -f docker-compose.prod.yml --env-file .env.production down
+
+  Kalau cuma mau lihat status:
+
+  docker compose -f docker-compose.prod.yml --env-file .env.production ps
+
 
 ---
 

@@ -3,7 +3,6 @@ package service
 import (
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"time"
 
@@ -201,10 +200,13 @@ func (s *authService) RequestPasswordReset(email string) error {
 
 	resetURL := buildResetPasswordURL(reset.Token)
 	if err := mailerPkg.SendPasswordResetEmail(user.Email, user.FullName, resetURL); err != nil {
-		log.Printf("password reset email fallback for %s: %s", user.Email, resetURL)
-		if !errors.Is(err, mailerPkg.ErrMailerNotConfigured) {
-			return err
+		if errors.Is(err, mailerPkg.ErrMailerNotConfigured) {
+			if config.IsProduction() {
+				return err
+			}
+			return nil
 		}
+		return err
 	}
 
 	return nil
@@ -283,14 +285,7 @@ func parseToken(tokenString string) (jwt.MapClaims, error) {
 }
 
 func jwtSecret() (string, error) {
-	secret := os.Getenv("JWT_SECRET")
-	if secret == "" {
-		if config.IsProduction() {
-			return "", errors.New("JWT_SECRET is required in production")
-		}
-		secret = "supersecretkey"
-	}
-	return secret, nil
+	return config.RequiredSecret("JWT_SECRET", 32)
 }
 
 func buildResetPasswordURL(token string) string {

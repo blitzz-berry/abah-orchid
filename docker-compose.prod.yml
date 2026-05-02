@@ -1,5 +1,6 @@
 services:
   api:
+    image: ${BACKEND_IMAGE:-orchidmart-backend:latest}
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -7,11 +8,13 @@ services:
       - ${ENV_FILE:-.env.production}
     environment:
       DB_HOST: postgres
+      DB_SSLMODE: ${DB_SSLMODE:-disable}
       REDIS_HOST: redis
       STORAGE_DRIVER: s3
       S3_ENDPOINT: minio:9000
       S3_USE_SSL: "false"
-      S3_PUBLIC_URL: ${PUBLIC_BASE_URL}/media/orchidmart-images
+      S3_PUBLIC_URL: ${S3_PUBLIC_URL:-/media/orchidmart-images}
+      S3_PAYMENT_PROOF_BUCKET: ${S3_PAYMENT_PROOF_BUCKET}
       PAYMENT_EXPIRY_WORKER: "true"
     depends_on:
       postgres:
@@ -25,6 +28,7 @@ services:
       - uploads:/app/uploads
 
   frontend:
+    image: ${FRONTEND_IMAGE:-orchidmart-frontend:latest}
     build:
       context: ./frontend
       dockerfile: Dockerfile
@@ -78,10 +82,12 @@ services:
       S3_ACCESS_KEY: ${S3_ACCESS_KEY}
       S3_SECRET_KEY: ${S3_SECRET_KEY}
       S3_BUCKET: ${S3_BUCKET}
+      S3_PAYMENT_PROOF_BUCKET: ${S3_PAYMENT_PROOF_BUCKET}
     entrypoint: >
       /bin/sh -c "
       until mc alias set local http://minio:9000 $$S3_ACCESS_KEY $$S3_SECRET_KEY; do sleep 2; done;
       mc mb -p local/$$S3_BUCKET || true;
+      mc mb -p local/$$S3_PAYMENT_PROOF_BUCKET || true;
       mc anonymous set download local/$$S3_BUCKET;
       "
 
@@ -94,6 +100,13 @@ services:
     depends_on:
       - frontend
       - api
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate --url http://nginx:80
+    depends_on:
+      - nginx
     restart: unless-stopped
 
 volumes:

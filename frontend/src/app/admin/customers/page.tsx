@@ -61,7 +61,7 @@ export default function AdminCustomersPage() {
           : filtered.length === 0 ? <tr><td colSpan={6} className="p-8 text-center text-gray-500 text-sm">Tidak ada pelanggan</td></tr>
           : filtered.map(c => (
             <motion.tr key={c.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-zinc-900/50">
-              <td className="p-4"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full bg-gradient-to-br from-[var(--color-brand-400)] to-[var(--color-leaf-500)] flex items-center justify-center text-white text-xs font-bold">{c.full_name?.charAt(0)?.toUpperCase()}</div><span className="font-bold text-sm">{c.full_name}</span></div></td>
+              <td className="p-4"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full bg-[var(--color-brand-600)] flex items-center justify-center text-white text-xs font-bold">{c.full_name?.charAt(0)?.toUpperCase()}</div><span className="font-bold text-sm">{c.full_name}</span></div></td>
               <td className="p-4 text-sm text-gray-500">{c.email}</td>
               <td className="p-4 text-sm">{c.phone || "-"}</td>
               <td className="p-4"><span className={`text-[10px] font-bold px-2 py-1 rounded-full ${c.customer_type === "B2B" ? "bg-blue-50 text-blue-600" : "bg-gray-100 text-gray-600"}`}>{c.customer_type || "B2C"}</span></td>
@@ -78,7 +78,7 @@ export default function AdminCustomersPage() {
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 w-full max-w-md shadow-2xl max-h-[80vh] overflow-y-auto">
             <div className="flex items-center gap-3 mb-6">
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[var(--color-brand-400)] to-[var(--color-leaf-500)] flex items-center justify-center text-white text-xl font-bold">{selected.full_name?.charAt(0)?.toUpperCase()}</div>
+              <div className="w-12 h-12 rounded-2xl bg-[var(--color-brand-600)] flex items-center justify-center text-white text-xl font-bold">{selected.full_name?.charAt(0)?.toUpperCase()}</div>
               <div><h2 className="text-xl font-bold">{selected.full_name}</h2><p className="text-sm text-gray-500">{selected.email}</p></div>
             </div>
             <div className="space-y-2 text-sm mb-6">

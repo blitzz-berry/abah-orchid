@@ -5,17 +5,39 @@ type RetriableRequestConfig = InternalAxiosRequestConfig & {
   _retry?: boolean;
 };
 
+let accessToken: string | null = null;
+
+export function setAccessToken(token: string | null | undefined) {
+  accessToken = token || null;
+}
+
+export function clearAccessToken() {
+  accessToken = null;
+}
+
+export function clearLegacyAuthStorage() {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem('access_token');
+  localStorage.removeItem('refresh_token');
+  localStorage.removeItem('user');
+}
+
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api/v1',
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  withCredentials: true,
 });
 
 api.interceptors.request.use((config) => {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+  if (accessToken) {
+    config.headers.Authorization = `Bearer ${accessToken}`;
+  }
+  if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+    if (typeof config.headers.delete === 'function') {
+      config.headers.delete('Content-Type');
+    } else {
+      delete config.headers['Content-Type'];
+      delete config.headers['content-type'];
+    }
   }
   return config;
 });
@@ -28,25 +50,21 @@ api.interceptors.response.use(
       error.response?.status === 401 &&
       originalRequest &&
       !originalRequest._retry &&
+      originalRequest.url !== '/auth/refresh' &&
       typeof window !== 'undefined'
     ) {
-      const refreshToken = localStorage.getItem('refresh_token');
-      if (refreshToken) {
-        originalRequest._retry = true;
-        try {
-          const response = await api.post('/auth/refresh', { refresh_token: refreshToken });
-          const data = response.data.data || response.data;
-          if (data.access_token) localStorage.setItem('access_token', data.access_token);
-          if (data.refresh_token) localStorage.setItem('refresh_token', data.refresh_token);
-          if (data.user) localStorage.setItem('user', JSON.stringify(data.user));
-          originalRequest.headers.Authorization = `Bearer ${data.access_token}`;
-          return api(originalRequest);
-        } catch (refreshError) {
-          localStorage.removeItem('access_token');
-          localStorage.removeItem('refresh_token');
-          localStorage.removeItem('user');
-          return Promise.reject(refreshError);
-        }
+      originalRequest._retry = true;
+      try {
+        const response = await api.post('/auth/refresh');
+        const data = response.data.data || response.data;
+        if (!data.access_token) throw new Error('Missing access token');
+        setAccessToken(data.access_token);
+        originalRequest.headers.Authorization = `Bearer ${data.access_token}`;
+        return api(originalRequest);
+      } catch (refreshError) {
+        clearAccessToken();
+        clearLegacyAuthStorage();
+        return Promise.reject(refreshError);
       }
     }
     return Promise.reject(error);
