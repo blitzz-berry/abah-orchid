@@ -5,10 +5,14 @@ backend/.env
 .env.production
 .env.local
 uploads/
+AGENTS.md
 AGENTS.MD
+ERD1.md
 ERD1.MD
 eror.md
 plan.md
 PRD.md
 tt.md
 security_repo.md
+security_report.md
+backend/.gocache/
