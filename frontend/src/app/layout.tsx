@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Outfit } from "next/font/google";
 import "./globals.css";
 import AuthProvider from "@/components/providers/AuthProvider";
+import FeedbackProvider from "@/components/providers/FeedbackProvider";
 
 const outfit = Outfit({
   variable: "--font-sans",
@@ -27,9 +28,11 @@ export default function RootLayout({
       data-scroll-behavior="smooth"
     >
       <body className="min-h-full flex flex-col font-sans transition-colors duration-300">
-        <AuthProvider>
-          {children}
-        </AuthProvider>
+        <FeedbackProvider>
+          <AuthProvider>
+            {children}
+          </AuthProvider>
+        </FeedbackProvider>
       </body>
     </html>
   );

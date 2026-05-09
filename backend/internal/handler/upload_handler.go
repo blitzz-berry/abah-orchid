@@ -26,6 +26,19 @@ func NewUploadHandler(db *gorm.DB, orderService service.OrderService) *UploadHan
 
 func (h *UploadHandler) UploadProductImage(c *gin.Context) {
 	productID := c.Param("id")
+	parsedProductID, err := uuid.Parse(productID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid product id"})
+		return
+	}
+
+	// Ensure product exists before writing any file to storage.
+	var product model.Product
+	if err := h.db.Select("id").Where("id = ?", parsedProductID).First(&product).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "product not found"})
+		return
+	}
+
 	file, err := c.FormFile("file")
 	if err != nil {
 		respondUploadParseError(c, err)
@@ -34,12 +47,6 @@ func (h *UploadHandler) UploadProductImage(c *gin.Context) {
 	result, err := storage.SaveImage(file, storage.ImageFolder("products", productID))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	parsedProductID, err := uuid.Parse(productID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid product id"})
 		return
 	}
 	image := model.ProductImage{

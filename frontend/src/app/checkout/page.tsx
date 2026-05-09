@@ -70,7 +70,7 @@ const emptyForm: CheckoutForm = {
 };
 
 const paymentMethods = [
-  { value: "manual_bank_transfer", title: "Transfer Bank Manual", description: "Transfer lalu upload bukti pembayaran." },
+  { value: "manual_bank_transfer", title: "Transfer Bank Manual", description: "Transfer lalu unggah bukti pembayaran." },
   { value: "midtrans_bank_transfer", title: "Virtual Account", description: "VA bank via Midtrans." },
   { value: "midtrans_ewallet", title: "E-Wallet", description: "GoPay atau ShopeePay via Midtrans." },
   { value: "midtrans_card", title: "Kartu Kredit/Debit", description: "Kartu Visa/Mastercard via Midtrans Snap." },
@@ -253,7 +253,7 @@ export default function CheckoutPage() {
 
   const handleCheckout = async () => {
     if (checkoutItems.length === 0) {
-      alert("Item checkout kosong. Pilih item dari cart dulu.");
+      alert("Item pembayaran kosong. Pilih item dari keranjang terlebih dahulu.");
       router.push("/cart");
       return;
     }
@@ -276,6 +276,8 @@ export default function CheckoutPage() {
         shipping_name: formData.shipping_name,
         shipping_phone: formData.shipping_phone,
         shipping_address: formData.shipping_address,
+        destination_province_id: formData.province_id,
+        destination_city_id: formData.city_id,
         shipping_city: selectedCity?.city_name || "",
         shipping_province: selectedProvince?.province || "",
         shipping_postal_code: selectedCity?.postal_code || "00000",
@@ -300,7 +302,7 @@ export default function CheckoutPage() {
         router.push(createdOrder?.id ? `/orders/${createdOrder.id}` : "/orders");
       }
     } catch (e: any) {
-      alert("Checkout gagal: " + (e.response?.data?.error || e.message));
+      alert("Proses pembayaran gagal: " + (e.response?.data?.error || e.message));
     } finally {
       setIsCheckingOut(false);
     }
@@ -311,24 +313,24 @@ export default function CheckoutPage() {
       <Navbar />
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 pt-24 pb-16">
         <Link href="/cart" className="inline-flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-[var(--color-brand-600)] mb-6">
-          <ArrowLeft className="w-4 h-4" /> Kembali ke cart
+          <ArrowLeft className="w-4 h-4" /> Kembali ke keranjang
         </Link>
-        <h1 className="text-3xl font-extrabold tracking-tight mb-8">Checkout</h1>
+        <h1 className="text-3xl font-extrabold tracking-tight mb-8">Pembayaran</h1>
 
         {isLoading ? (
           <div className="flex justify-center py-20"><div className="w-10 h-10 border-4 border-gray-200 border-t-[var(--color-leaf-500)] rounded-full animate-spin" /></div>
         ) : checkoutItems.length === 0 ? (
           <div className="text-center py-20 glass rounded-3xl">
             <Leaf className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <h2 className="text-2xl font-bold mb-2">Item checkout kosong</h2>
-            <p className="text-gray-500 mb-8">Pilih item dari cart dulu sebelum checkout.</p>
-            <Link href="/cart" className="bg-black text-white dark:bg-white dark:text-black px-6 py-3 rounded-xl font-bold inline-flex items-center gap-2">Buka Cart</Link>
+            <h2 className="text-2xl font-bold mb-2">Item pembayaran kosong</h2>
+            <p className="text-gray-500 mb-8">Pilih item dari keranjang terlebih dahulu sebelum melanjutkan proses pembayaran.</p>
+            <Link href="/cart" className="bg-black text-white dark:bg-white dark:text-black px-6 py-3 rounded-xl font-bold inline-flex items-center gap-2">Buka Keranjang</Link>
           </div>
         ) : (
           <div className="flex flex-col lg:flex-row gap-8">
             <div className="flex-1 flex flex-col gap-6">
               <div className="glass p-6 rounded-2xl">
-                <h2 className="text-lg font-bold mb-4">Item yang Dicheckout</h2>
+                <h2 className="text-lg font-bold mb-4">Item yang Diproses</h2>
                 <div className="flex flex-col gap-3">
                   {checkoutItems.map((item) => (
                     <div key={item.id} className="flex items-center gap-4 rounded-xl border border-gray-200 dark:border-gray-800 p-3">
@@ -422,7 +424,7 @@ export default function CheckoutPage() {
 
             <div className="w-full lg:w-[380px]">
               <div className="glass p-6 rounded-2xl sticky top-24">
-                <h2 className="text-lg font-bold mb-4 border-b border-gray-200 dark:border-gray-800 pb-4">Ringkasan Checkout</h2>
+                <h2 className="text-lg font-bold mb-4 border-b border-gray-200 dark:border-gray-800 pb-4">Ringkasan Pembayaran</h2>
                 <div className="flex justify-between mb-3 text-sm text-gray-600 dark:text-gray-300"><span>Subtotal ({checkoutItems.length} produk)</span><span>Rp {subtotal.toLocaleString("id-ID")}</span></div>
                 <div className="flex justify-between mb-3 text-sm text-gray-600 dark:text-gray-300"><span className="flex items-center gap-1"><Truck className="w-4 h-4" /> Ongkir</span><span>Rp {formData.shipping_cost.toLocaleString("id-ID")}</span></div>
                 <div className="flex justify-between mb-3 text-sm text-gray-600 dark:text-gray-300"><span>Packing</span><span>Rp {formData.packing_cost.toLocaleString("id-ID")}</span></div>

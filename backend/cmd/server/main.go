@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -34,6 +35,9 @@ func main() {
 
 	// Setup Gin router
 	r := gin.Default()
+	if err := r.SetTrustedProxies(trustedProxies()); err != nil {
+		log.Fatalf("Invalid TRUSTED_PROXIES configuration: %v", err)
+	}
 	r.MaxMultipartMemory = 8 << 20
 	r.Use(middleware.SecurityHeaders())
 	r.StaticFS("/uploads", storage.PublicFileSystem())
@@ -109,6 +113,7 @@ func main() {
 		{
 			authRoutes.POST("/register", authHandler.Register)
 			authRoutes.POST("/login", middleware.RateLimit(5, 15*time.Minute), authHandler.Login)
+			authRoutes.POST("/google", middleware.RateLimit(10, 15*time.Minute), authHandler.GoogleLogin)
 			authRoutes.POST("/refresh", authHandler.Refresh)
 			authRoutes.POST("/logout", authHandler.Logout)
 			authRoutes.POST("/forgot-password", middleware.RateLimit(5, 15*time.Minute), authHandler.ForgotPassword)
@@ -223,6 +228,7 @@ func main() {
 			adminRoutes.POST("/products/:id/adjust-stock", productHandler.AdjustStock)
 			adminRoutes.POST("/products/:id/images", adminHandler.AddProductImage)
 			adminRoutes.POST("/products/:id/images/upload", middleware.BodyLimit(storage.MaxImageSize+(1<<20)), uploadHandler.UploadProductImage)
+			adminRoutes.PUT("/products/:id/images/:image_id/primary", adminHandler.SetPrimaryProductImage)
 			adminRoutes.DELETE("/products/:id/images/:image_id", adminHandler.DeleteProductImage)
 			adminRoutes.GET("/categories", productHandler.GetAllCategories)
 			adminRoutes.POST("/categories", adminHandler.CreateCategory)
@@ -271,4 +277,25 @@ func main() {
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Failed to run server: %v", err)
 	}
+}
+
+func trustedProxies() []string {
+	raw := strings.TrimSpace(os.Getenv("TRUSTED_PROXIES"))
+	if raw == "" {
+		if config.IsProduction() {
+			log.Fatal("TRUSTED_PROXIES is required in production (comma-separated IPs/CIDRs of reverse proxies)")
+		}
+		// Dev default: only trust local proxy hops.
+		return []string{"127.0.0.1", "::1"}
+	}
+
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }

@@ -3,6 +3,8 @@ package repository
 import (
 	"errors"
 	"orchidmart-backend/internal/model"
+	"orchidmart-backend/internal/pkg/tokenhash"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -27,6 +29,7 @@ type UserRepository interface {
 	CreateRefreshToken(token *model.RefreshToken) error
 	FindRefreshToken(token string) (*model.RefreshToken, error)
 	RevokeRefreshToken(token string) error
+	RevokeRefreshTokensForUser(userID string) error
 }
 
 type userRepository struct {
@@ -38,12 +41,14 @@ func NewUserRepository(db *gorm.DB) UserRepository {
 }
 
 func (r *userRepository) CreateUser(user *model.User) error {
+	user.Email = strings.ToLower(strings.TrimSpace(user.Email))
 	return r.db.Create(user).Error
 }
 
 func (r *userRepository) FindByEmail(email string) (*model.User, error) {
 	var user model.User
-	err := r.db.Where("email = ?", email).First(&user).Error
+	email = strings.ToLower(strings.TrimSpace(email))
+	err := r.db.Where("LOWER(email) = ?", email).First(&user).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
@@ -199,25 +204,52 @@ func (r *userRepository) CreatePasswordReset(reset *model.PasswordReset) error {
 	if reset.ID == uuid.Nil {
 		reset.ID = uuid.New()
 	}
-	return r.db.Create(reset).Error
+
+	// Store hash in DB (avoid persisting plaintext token).
+	stored := *reset
+	stored.Token = tokenhash.Hash(reset.Token)
+	return r.db.Create(&stored).Error
 }
 
 func (r *userRepository) FindPasswordResetByToken(token string) (*model.PasswordReset, error) {
 	var reset model.PasswordReset
-	err := r.db.Where("token = ?", token).First(&reset).Error
+	hashed := tokenhash.Hash(token)
+	err := r.db.Where("token = ?", hashed).First(&reset).Error
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
 		}
-		return nil, err
+
+		// Backward-compat: handle legacy plaintext tokens, then migrate to hashed.
+		err = r.db.Where("token = ?", token).First(&reset).Error
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, nil
+			}
+			return nil, err
+		}
+		_ = r.db.Model(&model.PasswordReset{}).Where("id = ?", reset.ID).Update("token", hashed).Error
 	}
 	return &reset, nil
 }
 
 func (r *userRepository) MarkPasswordResetUsed(token string) error {
-	return r.db.Model(&model.PasswordReset{}).
+	hashed := tokenhash.Hash(token)
+	result := r.db.Model(&model.PasswordReset{}).
+		Where("token = ?", hashed).
+		Update("is_used", true)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		return nil
+	}
+
+	// Backward-compat: legacy plaintext token.
+	result = r.db.Model(&model.PasswordReset{}).
 		Where("token = ?", token).
-		Update("is_used", true).Error
+		Updates(map[string]interface{}{"is_used": true, "token": hashed})
+	return result.Error
 }
 
 func (r *userRepository) UpdatePassword(userID string, hashedPassword string) error {
@@ -230,21 +262,56 @@ func (r *userRepository) CreateRefreshToken(token *model.RefreshToken) error {
 	if token.ID == uuid.Nil {
 		token.ID = uuid.New()
 	}
-	return r.db.Create(token).Error
+
+	// Store hash in DB (avoid persisting plaintext token).
+	stored := *token
+	stored.Token = tokenhash.Hash(token.Token)
+	return r.db.Create(&stored).Error
 }
 
 func (r *userRepository) FindRefreshToken(token string) (*model.RefreshToken, error) {
 	var refreshToken model.RefreshToken
-	err := r.db.Where("token = ?", token).First(&refreshToken).Error
+	hashed := tokenhash.Hash(token)
+	err := r.db.Where("token = ?", hashed).First(&refreshToken).Error
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
 		}
-		return nil, err
+
+		// Backward-compat: handle legacy plaintext tokens, then migrate to hashed.
+		err = r.db.Where("token = ?", token).First(&refreshToken).Error
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, nil
+			}
+			return nil, err
+		}
+		_ = r.db.Model(&model.RefreshToken{}).Where("id = ?", refreshToken.ID).Update("token", hashed).Error
 	}
 	return &refreshToken, nil
 }
 
 func (r *userRepository) RevokeRefreshToken(token string) error {
-	return r.db.Model(&model.RefreshToken{}).Where("token = ?", token).Update("is_revoked", true).Error
+	hashed := tokenhash.Hash(token)
+	result := r.db.Model(&model.RefreshToken{}).
+		Where("token = ?", hashed).
+		Update("is_revoked", true)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		return nil
+	}
+
+	// Backward-compat: legacy plaintext token.
+	result = r.db.Model(&model.RefreshToken{}).
+		Where("token = ?", token).
+		Updates(map[string]interface{}{"is_revoked": true, "token": hashed})
+	return result.Error
+}
+
+func (r *userRepository) RevokeRefreshTokensForUser(userID string) error {
+	return r.db.Model(&model.RefreshToken{}).
+		Where("user_id = ?", userID).
+		Update("is_revoked", true).Error
 }

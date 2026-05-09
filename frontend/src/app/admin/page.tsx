@@ -5,6 +5,8 @@ import Link from "next/link";
 import { Users, DollarSign, Package, TrendingUp, ChevronRight, ShoppingBag, Boxes } from "lucide-react";
 import api from "@/lib/api";
 import { motion } from "framer-motion";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type SalesPoint = {
   label: string;
@@ -113,73 +115,80 @@ export default function AdminDashboard() {
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 mb-8">
             {cards.map((card, index) => (
-              <motion.div key={card.title} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.08 }} className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 p-5 rounded-2xl">
-                <div className="flex items-center justify-between mb-3">
-                  <div className={`p-2.5 ${card.bg} ${card.color} rounded-xl`}><card.icon className="w-5 h-5" /></div>
-                </div>
-                <h3 className="text-sm text-gray-500 font-medium mb-1">{card.title}</h3>
-                <p className="text-2xl font-extrabold mb-1">{card.value}</p>
-                <p className="text-xs text-gray-500">{card.helper}</p>
+              <motion.div key={card.title} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.08 }}>
+                <Card>
+                  <CardContent className="p-5">
+                    <div className={`mb-3 inline-flex rounded-md p-2.5 ${card.bg} ${card.color}`}><card.icon className="w-5 h-5" /></div>
+                    <h3 className="text-sm text-muted-foreground font-medium mb-1">{card.title}</h3>
+                    <p className="text-2xl font-extrabold mb-1">{card.value}</p>
+                    <p className="text-xs text-muted-foreground">{card.helper}</p>
+                  </CardContent>
+                </Card>
               </motion.div>
             ))}
           </div>
 
           <div className="grid grid-cols-1 xl:grid-cols-[2fr_1fr] gap-6 mb-8">
-            <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-5">
-              <div className="flex items-center justify-between mb-5">
-                <h3 className="font-bold flex items-center gap-2"><TrendingUp className="w-5 h-5 text-[var(--color-brand-600)]" /> Tren Penjualan 7 Hari</h3>
-                <span className="text-xs text-gray-500">Revenue per hari</span>
-              </div>
-              <div className="grid grid-cols-7 gap-3 items-end min-h-[220px]">
-                {salesSeries.map((point) => {
-                  const height = maxRevenue > 0 ? Math.max((point.revenue / maxRevenue) * 180, 10) : 10;
-                  return (
-                    <div key={point.label} className="flex flex-col items-center gap-3">
-                      <div className="text-[10px] text-gray-500 font-medium text-center">Rp {Math.round(point.revenue / 1000).toLocaleString("id-ID")}k</div>
-                      <div className="w-full flex justify-center">
-                        <div className="w-full max-w-[36px] rounded-t-2xl bg-[var(--color-brand-600)]" style={{ height }} />
+            <Card>
+              <CardHeader className="flex-row items-center justify-between">
+                <CardTitle className="flex items-center gap-2"><TrendingUp className="w-5 h-5 text-[var(--color-brand-600)]" /> Tren Penjualan 7 Hari</CardTitle>
+                <span className="text-xs text-muted-foreground">Revenue per hari</span>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-7 gap-3 items-end min-h-[220px]">
+                  {salesSeries.map((point) => {
+                    const height = maxRevenue > 0 ? Math.max((point.revenue / maxRevenue) * 180, 10) : 10;
+                    return (
+                      <div key={point.label} className="flex flex-col items-center gap-3">
+                        <div className="text-[10px] text-muted-foreground font-medium text-center">Rp {Math.round(point.revenue / 1000).toLocaleString("id-ID")}k</div>
+                        <div className="w-full flex justify-center">
+                          <div className="w-full max-w-[36px] rounded-t-md bg-[var(--color-brand-600)]" style={{ height }} />
+                        </div>
+                        <div className="text-[11px] font-semibold text-center">{point.label}</div>
+                        <div className="text-[10px] text-muted-foreground">{point.orders} order</div>
                       </div>
-                      <div className="text-[11px] font-semibold text-center">{point.label}</div>
-                      <div className="text-[10px] text-gray-400">{point.orders} order</div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
 
-            <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-5">
-              <h3 className="font-bold mb-5">Status Pesanan</h3>
-              <div className="flex flex-col gap-3">
+            <Card>
+              <CardHeader>
+                <CardTitle>Status Pesanan</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3">
                 {Object.keys(orderStatuses).length === 0 ? (
-                  <p className="text-gray-500 text-sm">Belum ada distribusi status pesanan.</p>
+                  <p className="text-muted-foreground text-sm">Belum ada distribusi status pesanan.</p>
                 ) : (
                   Object.entries(orderStatuses).map(([status, count]) => (
-                    <div key={status} className="flex items-center justify-between p-3 rounded-xl border border-gray-100 dark:border-gray-800">
+                    <div key={status} className="flex items-center justify-between rounded-md border p-3">
                       <span className="text-sm font-medium">{STATUS_LABELS[status] || status}</span>
-                      <span className="text-sm font-extrabold">{count}</span>
+                      <Badge variant="secondary">{count}</Badge>
                     </div>
                   ))
                 )}
-              </div>
-            </div>
+              </CardContent>
+            </Card>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-            <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-5">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-bold">Produk Terlaris</h3>
+            <Card>
+              <CardHeader className="flex-row items-center justify-between">
+                <CardTitle>Produk Terlaris</CardTitle>
                 <Link href="/admin/products" className="text-xs text-[var(--color-brand-600)] font-medium hover:underline flex items-center gap-1">Kelola <ChevronRight className="w-3 h-3" /></Link>
-              </div>
+              </CardHeader>
+              <CardContent>
               {topProducts.length === 0 ? (
-                <p className="text-gray-500 text-sm">Belum ada transaksi berhasil.</p>
+                <p className="text-muted-foreground text-sm">Belum ada transaksi berhasil.</p>
               ) : (
                 <div className="flex flex-col gap-3">
                   {topProducts.map((product, index) => (
-                    <div key={product.product_id} className="flex items-center justify-between p-3 border border-gray-100 dark:border-gray-800 rounded-xl">
+                    <div key={product.product_id} className="flex items-center justify-between rounded-md border p-3">
                       <div className="min-w-0">
-                        <div className="text-xs text-gray-400 mb-1">#{index + 1}</div>
+                        <div className="text-xs text-muted-foreground mb-1">#{index + 1}</div>
                         <div className="font-medium text-sm truncate">{product.name}</div>
-                        <div className="text-xs text-gray-500">{product.quantity} item terjual</div>
+                        <div className="text-xs text-muted-foreground">{product.quantity} item terjual</div>
                       </div>
                       <div className="text-right">
                         <div className="font-bold text-sm">Rp {Math.round(product.revenue).toLocaleString("id-ID")}</div>
@@ -188,11 +197,14 @@ export default function AdminDashboard() {
                   ))}
                 </div>
               )}
-            </div>
+              </CardContent>
+            </Card>
 
-            <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-5">
-              <h3 className="font-bold mb-4">Segment Pelanggan</h3>
-              <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Segment Pelanggan</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
                 {[
                   { label: "B2B", value: customerSegments.b2b, color: "bg-blue-500" },
                   { label: "B2C", value: customerSegments.b2c, color: "bg-emerald-500" },
@@ -205,59 +217,63 @@ export default function AdminDashboard() {
                         <span className="text-sm font-medium">{segment.label}</span>
                         <span className="text-sm font-bold">{segment.value}</span>
                       </div>
-                      <div className="h-3 rounded-full bg-gray-100 dark:bg-zinc-800 overflow-hidden">
+                      <div className="h-3 rounded-full bg-muted overflow-hidden">
                         <div className={`${segment.color} h-full rounded-full`} style={{ width: `${percentage}%` }} />
                       </div>
                     </div>
                   );
                 })}
-              </div>
-            </div>
+              </CardContent>
+            </Card>
 
-            <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-5">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-bold flex items-center gap-2"><Boxes className="w-4 h-4 text-amber-500" /> Alert Stok</h3>
+            <Card>
+              <CardHeader className="flex-row items-center justify-between">
+                <CardTitle className="flex items-center gap-2"><Boxes className="w-4 h-4 text-amber-500" /> Alert Stok</CardTitle>
                 <Link href="/admin/inventory" className="text-xs text-[var(--color-brand-600)] font-medium hover:underline flex items-center gap-1">Inventori <ChevronRight className="w-3 h-3" /></Link>
-              </div>
+              </CardHeader>
+              <CardContent>
               {lowStockProducts.length === 0 ? (
                 <p className="text-sm text-emerald-600 font-medium">Tidak ada produk yang perlu direstock sekarang.</p>
               ) : (
                 <div className="flex flex-col gap-3">
                   {lowStockProducts.map((product) => (
-                    <div key={product.id} className="p-3 rounded-xl border border-amber-100 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-950/20">
+                    <div key={product.id} className="rounded-md border border-amber-100 bg-amber-50/60 p-3 dark:border-amber-900 dark:bg-amber-950/20">
                       <div className="font-medium text-sm">{product.name}</div>
-                      <div className="text-xs text-gray-500 mt-1">Sisa {product.inventory?.quantity ?? 0} dari threshold {product.inventory?.low_stock_threshold ?? 5}</div>
+                      <div className="text-xs text-muted-foreground mt-1">Sisa {product.inventory?.quantity ?? 0} dari threshold {product.inventory?.low_stock_threshold ?? 5}</div>
                     </div>
                   ))}
                 </div>
               )}
-            </div>
+              </CardContent>
+            </Card>
           </div>
 
-          <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold">Pesanan Terbaru</h3>
+          <Card>
+            <CardHeader className="flex-row items-center justify-between">
+              <CardTitle>Pesanan Terbaru</CardTitle>
               <Link href="/admin/orders" className="text-xs text-[var(--color-brand-600)] font-medium hover:underline flex items-center gap-1">Lihat Semua <ChevronRight className="w-3 h-3" /></Link>
-            </div>
+            </CardHeader>
+            <CardContent>
             {recentOrders.length === 0 ? (
-              <p className="text-gray-500 text-sm py-4 text-center">Belum ada pesanan</p>
+              <p className="text-muted-foreground text-sm py-4 text-center">Belum ada pesanan</p>
             ) : (
               <div className="flex flex-col gap-2">
                 {recentOrders.map((order) => (
-                  <Link key={order.id} href="/admin/orders" className="flex items-center justify-between p-3 border border-gray-100 dark:border-gray-800 rounded-xl hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors">
+                  <Link key={order.id} href="/admin/orders" className="flex items-center justify-between rounded-md border p-3 transition-colors hover:bg-muted/50">
                     <div>
                       <div className="font-medium text-sm">{order.order_number}</div>
-                      <div className="text-xs text-gray-500">{order.user?.full_name || order.shipping_name || "Customer"}</div>
+                      <div className="text-xs text-muted-foreground">{order.user?.full_name || order.shipping_name || "Pelanggan"}</div>
                     </div>
                     <div className="text-right">
                       <div className="font-bold text-sm">Rp {order.total?.toLocaleString("id-ID") || "0"}</div>
-                      <div className="text-[10px] font-medium text-gray-500">{order.status?.replace(/_/g, " ")}</div>
+                      <div className="text-[10px] font-medium text-muted-foreground">{order.status?.replace(/_/g, " ")}</div>
                     </div>
                   </Link>
                 ))}
               </div>
             )}
-          </div>
+            </CardContent>
+          </Card>
         </>
       )}
     </div>

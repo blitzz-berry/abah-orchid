@@ -73,7 +73,7 @@ export default function AdminInventoryPage() {
       setActiveProduct(null);
       await fetchInventory();
     } catch (e: any) {
-      alert("Gagal update inventory: " + (e.response?.data?.error || e.message));
+      alert("Gagal memperbarui inventori: " + (e.response?.data?.error || e.message));
     }
   };
 
@@ -146,7 +146,7 @@ export default function AdminInventoryPage() {
                         <td className="p-4 text-sm text-gray-500">{threshold}</td>
                         <td className="p-4 text-sm font-medium">Rp {(product.price * qty).toLocaleString("id-ID")}</td>
                         <td className="p-4">{isOut ? <Badge color="red" label="HABIS" /> : isLow ? <Badge color="amber" label="RENDAH" /> : <Badge color="emerald" label="AMAN" />}</td>
-                        <td className="p-4 text-right"><button onClick={() => openStockModal(product)} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-[var(--color-leaf-50)] text-[var(--color-leaf-600)] text-xs font-bold hover:bg-[var(--color-leaf-100)]"><Edit2 className="w-3.5 h-3.5" /> Update</button></td>
+                        <td className="p-4 text-right"><button onClick={() => openStockModal(product)} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-[var(--color-leaf-50)] text-[var(--color-leaf-600)] text-xs font-bold hover:bg-[var(--color-leaf-100)]"><Edit2 className="w-3.5 h-3.5" /> Perbarui</button></td>
                       </tr>
                     );
                   })}
@@ -195,7 +195,7 @@ export default function AdminInventoryPage() {
           <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
             <div className="flex items-start justify-between gap-4 mb-5">
               <div>
-                <h2 className="text-xl font-bold mb-1">Update Inventory</h2>
+                <h2 className="text-xl font-bold mb-1">Perbarui Inventori</h2>
                 <p className="text-gray-500 text-sm">{activeProduct.name}</p>
               </div>
               <button onClick={() => setActiveProduct(null)} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-zinc-800"><X className="w-4 h-4" /></button>

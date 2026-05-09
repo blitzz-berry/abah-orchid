@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"errors"
-	"io"
 	"net/http"
 	"time"
 
@@ -82,6 +80,38 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Login successful",
+		"data":    res,
+	})
+}
+
+func (h *AuthHandler) GoogleLogin(c *gin.Context) {
+	var req request.GoogleLoginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Token Google tidak valid."})
+		return
+	}
+
+	user, acToken, rfToken, err := h.authService.LoginWithGoogle(req.Credential)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	setRefreshTokenCookie(c, rfToken)
+	res := response.AuthResponse{
+		AccessToken: acToken,
+		User: response.UserResponse{
+			ID:        user.ID,
+			Email:     user.Email,
+			FullName:  user.FullName,
+			Phone:     user.Phone,
+			Role:      user.Role,
+			CreatedAt: user.CreatedAt,
+		},
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Masuk dengan Google berhasil.",
 		"data":    res,
 	})
 }
@@ -206,14 +236,24 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 		return
 	}
 
-	if err := h.authService.RequestPasswordReset(req.Email); err != nil {
+	result, err := h.authService.RequestPasswordReset(req.Email)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	payload := gin.H{
 		"message": "If the email is registered, a reset instruction has been generated",
-	})
+	}
+	if result != nil {
+		data := gin.H{"email_sent": result.EmailSent}
+		if result.ResetURL != "" && !config.IsProduction() {
+			data["reset_url"] = result.ResetURL
+		}
+		payload["data"] = data
+	}
+
+	c.JSON(http.StatusOK, payload)
 }
 
 func (h *AuthHandler) ResetPassword(c *gin.Context) {
@@ -389,17 +429,7 @@ func refreshTokenFromRequest(c *gin.Context) (string, error) {
 	if token, err := c.Cookie(refreshTokenCookieName); err == nil && token != "" {
 		return token, nil
 	}
-
-	var req struct {
-		RefreshToken string `json:"refresh_token"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if errors.Is(err, io.EOF) {
-			return "", nil
-		}
-		return "", err
-	}
-	return req.RefreshToken, nil
+	return "", nil
 }
 
 func setRefreshTokenCookie(c *gin.Context, token string) {

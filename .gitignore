@@ -1,4 +1,6 @@
 backend/server.exe
+backend/bin/
+*.log
 node_modules/
 .next/
 backend/.env
@@ -13,6 +15,9 @@ eror.md
 plan.md
 PRD.md
 tt.md
+production.md
 security_repo.md
 security_report.md
 backend/.gocache/
+backend/.gomodcache/
+backend/.gotmp/

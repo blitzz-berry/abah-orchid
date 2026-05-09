@@ -1,17 +1,68 @@
 import type { NextConfig } from "next";
 
-const contentSecurityPolicy = [
-  "default-src 'self'",
-  "base-uri 'self'",
-  "object-src 'none'",
-  "frame-ancestors 'none'",
-  "form-action 'self'",
-  "img-src 'self' data: blob: https:",
-  "font-src 'self' data:",
-  "script-src 'self' 'unsafe-inline'",
-  "style-src 'self' 'unsafe-inline'",
-  "connect-src 'self' http://localhost:8080 https:",
-].join("; ");
+const isProd = process.env.NODE_ENV === "production";
+
+function originFromURL(raw?: string) {
+  if (!raw) return null;
+  try {
+    const parsed = new URL(raw);
+    return `${parsed.protocol}//${parsed.host}`;
+  } catch {
+    return null;
+  }
+}
+
+function readAllowlist(envKey: string) {
+  const raw = process.env[envKey] || "";
+  return raw
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function buildContentSecurityPolicy() {
+  const apiOrigin = originFromURL(process.env.NEXT_PUBLIC_API_URL);
+  const googleIdentityOrigin = "https://accounts.google.com";
+  const googleAPIsOrigin = "https://www.googleapis.com";
+  const connectSrc = new Set<string>(["'self'"]);
+  if (!isProd) {
+    connectSrc.add("http://localhost:8080");
+    connectSrc.add("https:");
+  }
+  if (apiOrigin) connectSrc.add(apiOrigin);
+  connectSrc.add(googleIdentityOrigin);
+  connectSrc.add(googleAPIsOrigin);
+  for (const value of readAllowlist("CSP_CONNECT_SRC_ALLOWLIST")) connectSrc.add(value);
+
+  const imgSrc = new Set<string>(["'self'", "data:", "blob:"]);
+  if (!isProd) imgSrc.add("https:");
+  for (const value of readAllowlist("CSP_IMG_SRC_ALLOWLIST")) imgSrc.add(value);
+
+  const scriptSrc = new Set<string>(["'self'", "'unsafe-inline'", googleIdentityOrigin]);
+  if (!isProd) scriptSrc.add("'unsafe-eval'");
+  for (const value of readAllowlist("CSP_SCRIPT_SRC_ALLOWLIST")) scriptSrc.add(value);
+
+  const frameSrc = new Set<string>(["'self'", googleIdentityOrigin]);
+  for (const value of readAllowlist("CSP_FRAME_SRC_ALLOWLIST")) frameSrc.add(value);
+
+  return [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+    `img-src ${Array.from(imgSrc).join(" ")}`,
+    "font-src 'self' data:",
+    // NOTE: Next.js commonly injects inline scripts/styles (e.g. __NEXT_DATA__).
+    // Tightening 'unsafe-inline' should be done via nonce/hash rollout.
+    `script-src ${Array.from(scriptSrc).join(" ")}`,
+    "style-src 'self' 'unsafe-inline'",
+    `frame-src ${Array.from(frameSrc).join(" ")}`,
+    `connect-src ${Array.from(connectSrc).join(" ")}`,
+  ].join("; ");
+}
+
+const contentSecurityPolicy = buildContentSecurityPolicy();
 
 const nextConfig: NextConfig = {
   output: "standalone",

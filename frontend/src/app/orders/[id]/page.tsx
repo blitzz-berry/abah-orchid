@@ -94,7 +94,7 @@ export default function OrderDetailPage() {
   const handleSubmitReview = async (productID: string) => {
     const form = reviewForms[productID];
     if (!form || form.rating < 1) {
-      alert("Pilih rating dulu.");
+      alert("Pilih rating terlebih dahulu.");
       return;
     }
     try {
@@ -148,9 +148,9 @@ export default function OrderDetailPage() {
       setPayment(response.data.data?.payment || response.data.data || null);
       setProofFile(null);
       event.target.value = "";
-      alert("Bukti transfer berhasil diupload. Admin akan konfirmasi pembayaran.");
+      alert("Bukti transfer berhasil diunggah. Admin akan mengonfirmasi pembayaran.");
     } catch (e: any) {
-      alert("Upload bukti gagal: " + (e.response?.data?.error || e.message));
+      alert("Unggah bukti gagal: " + (e.response?.data?.error || e.message));
     } finally {
       setIsUploadingProof(false);
     }
@@ -239,9 +239,9 @@ export default function OrderDetailPage() {
                     </div>
                     {order.status === "COMPLETED" && (
                       <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800">
-                        <div className="text-sm font-semibold mb-2 flex items-center gap-2"><Star className="w-4 h-4 text-amber-500" /> Review Produk</div>
+                        <div className="text-sm font-semibold mb-2 flex items-center gap-2"><Star className="w-4 h-4 text-amber-500" /> Ulasan Produk</div>
                         {reviewForms[item.product_id]?.submitted ? (
-                          <div className="text-sm text-emerald-600 font-medium">Review berhasil dikirim.</div>
+                          <div className="text-sm text-emerald-600 font-medium">Ulasan berhasil dikirim.</div>
                         ) : (
                           <>
                             <div className="flex gap-2 mb-3">
@@ -249,8 +249,8 @@ export default function OrderDetailPage() {
                                 <button key={rating} type="button" onClick={() => updateReviewDraft(item.product_id, { rating })} className={`text-xl ${rating <= (reviewForms[item.product_id]?.rating || 0) ? "text-amber-500" : "text-gray-300"}`}>★</button>
                               ))}
                             </div>
-                            <textarea value={reviewForms[item.product_id]?.comment || ""} onChange={(e) => updateReviewDraft(item.product_id, { comment: e.target.value })} rows={3} placeholder="Tulis pengalaman lu dengan produk ini..." className="w-full bg-gray-50 dark:bg-black border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm mb-3" />
-                            <button onClick={() => handleSubmitReview(item.product_id)} className="px-4 py-2 rounded-xl bg-black text-white dark:bg-white dark:text-black text-sm font-bold">Kirim Review</button>
+                            <textarea value={reviewForms[item.product_id]?.comment || ""} onChange={(e) => updateReviewDraft(item.product_id, { comment: e.target.value })} rows={3} placeholder="Tulis pengalaman Anda dengan produk ini..." className="w-full bg-gray-50 dark:bg-black border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm mb-3" />
+                            <button onClick={() => handleSubmitReview(item.product_id)} className="px-4 py-2 rounded-xl bg-black text-white dark:bg-white dark:text-black text-sm font-bold">Kirim Ulasan</button>
                           </>
                         )}
                       </div>
@@ -301,7 +301,7 @@ export default function OrderDetailPage() {
                         <p>BRI 1122334455 a.n. OrchidMart</p>
                         <p>Mandiri 5566778899 a.n. OrchidMart</p>
                       </div>
-                      <p className="mt-3 text-xs text-gray-500">Transfer sesuai total pesanan lalu upload bukti. Admin akan konfirmasi manual.</p>
+                      <p className="mt-3 text-xs text-gray-500">Transfer sesuai total pesanan lalu unggah bukti. Admin akan melakukan konfirmasi secara manual.</p>
                     </div>
                   )}
 
@@ -313,13 +313,13 @@ export default function OrderDetailPage() {
 
                   {isManualTransfer && (
                     <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 p-4">
-                      <div className="text-sm font-medium mb-3">Upload Bukti Transfer</div>
+                      <div className="text-sm font-medium mb-3">Unggah Bukti Transfer</div>
                       {canUploadProof ? (
                         <>
                           <input ref={proofInputRef} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={handleProofFileChange} className="hidden" />
                           {proofFile && <p className="text-xs text-gray-500 mb-3">{proofFile.name}</p>}
                           <button onClick={handleUploadProof} disabled={isUploadingProof} className="px-4 py-2 rounded-xl bg-black text-white dark:bg-white dark:text-black text-sm font-bold inline-flex items-center gap-2 disabled:opacity-50">
-                            <Upload className="w-4 h-4" /> {isUploadingProof ? "Mengupload..." : "Upload Bukti"}
+                            <Upload className="w-4 h-4" /> {isUploadingProof ? "Mengunggah..." : "Unggah Bukti"}
                           </button>
                         </>
                       ) : (
@@ -397,7 +397,7 @@ function paymentStatusLabel(status: string) {
     case "EXPIRED":
       return "Kedaluwarsa";
     case "REFUNDED":
-      return "Refund";
+      return "Dana Dikembalikan";
     default:
       return status.replace(/_/g, " ");
   }
@@ -405,11 +405,11 @@ function paymentStatusLabel(status: string) {
 
 function getProofUploadMessage(orderStatus: string, payment: Payment | null) {
   if (!payment) return "Data pembayaran belum tersedia.";
-  if (payment.status === "WAITING_CONFIRMATION") return "Bukti transfer sudah diupload dan sedang menunggu konfirmasi admin.";
+  if (payment.status === "WAITING_CONFIRMATION") return "Bukti transfer sudah diunggah dan sedang menunggu konfirmasi admin.";
   if (payment.status === "PAID") return "Pembayaran sudah dikonfirmasi.";
   if (payment.status === "EXPIRED") return "Pembayaran sudah kedaluwarsa.";
-  if (orderStatus !== "PENDING_PAYMENT") return `Upload bukti hanya tersedia saat status pesanan ${orderStatusLabel("PENDING_PAYMENT")}. Status sekarang: ${orderStatusLabel(orderStatus)}.`;
-  return "Upload bukti belum tersedia untuk pembayaran ini.";
+  if (orderStatus !== "PENDING_PAYMENT") return `Unggah bukti hanya tersedia saat status pesanan ${orderStatusLabel("PENDING_PAYMENT")}. Status sekarang: ${orderStatusLabel(orderStatus)}.`;
+  return "Unggah bukti belum tersedia untuk pembayaran ini.";
 }
 
 function orderStatusLabel(status: string) {
@@ -431,7 +431,7 @@ function orderStatusLabel(status: string) {
     case "RETURN_REQUESTED":
       return "Pengajuan Retur";
     case "REFUNDED":
-      return "Refund";
+      return "Dana Dikembalikan";
     default:
       return status.replace(/_/g, " ");
   }

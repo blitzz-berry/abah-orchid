@@ -9,6 +9,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { motion } from "framer-motion";
 import Navbar from "@/components/ui/Navbar";
 import Footer from "@/components/ui/Footer";
+import { cartErrorMessage } from "@/lib/cart-errors";
 import { resolveUploadURL } from "@/lib/uploads";
 import type { Product, Review } from "@/types";
 
@@ -88,7 +89,7 @@ export default function ProductDetailPage() {
       if (e.response?.status === 401) {
         router.push("/login");
       } else {
-        alert("Gagal: " + (e.response?.data?.error || e.message));
+        alert(cartErrorMessage(e));
       }
     } finally {
       setIsAdding(false);
@@ -213,7 +214,7 @@ export default function ProductDetailPage() {
               )}
 
               <div className="glass p-5 rounded-2xl mb-6">
-                <h3 className="font-bold flex items-center gap-2 border-b border-gray-200 dark:border-gray-800 pb-3 mb-3"><Star className="w-5 h-5 text-amber-500" /> Review Pelanggan</h3>
+                <h3 className="font-bold flex items-center gap-2 border-b border-gray-200 dark:border-gray-800 pb-3 mb-3"><Star className="w-5 h-5 text-amber-500" /> Ulasan Pelanggan</h3>
                 {reviews.length === 0 ? (
                   <p className="text-sm text-gray-500">Belum ada review untuk produk ini.</p>
                 ) : (

@@ -7,6 +7,7 @@ import { Heart, ShoppingCart, Trash2 } from "lucide-react";
 import Navbar from "@/components/ui/Navbar";
 import Footer from "@/components/ui/Footer";
 import api from "@/lib/api";
+import { cartErrorMessage } from "@/lib/cart-errors";
 import { useAuthStore } from "@/store/useAuthStore";
 import type { WishlistItem } from "@/types";
 
@@ -57,7 +58,7 @@ export default function WishlistPage() {
       setAddedProductId(productID);
       setTimeout(() => setAddedProductId((current) => current === productID ? null : current), 2500);
     } catch (e: any) {
-      alert("Gagal masukin ke cart: " + (e.response?.data?.error || e.message));
+      alert(cartErrorMessage(e));
     } finally {
       setAddingProductId(null);
     }
@@ -74,7 +75,7 @@ export default function WishlistPage() {
           <div className="text-center py-20 glass rounded-3xl">
             <Heart className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <h2 className="text-2xl font-bold mb-2">Wishlist Masih Kosong</h2>
-            <p className="text-gray-500 mb-8">Simpan dulu produk yang pengen lu pantau atau beli nanti.</p>
+            <p className="text-gray-500 mb-8">Simpan produk yang ingin Anda pantau atau beli di kemudian hari.</p>
             <Link href="/products" className="bg-black text-white dark:bg-white dark:text-black px-6 py-3 rounded-xl font-bold inline-flex items-center gap-2">Lihat Katalog</Link>
           </div>
         ) : (
@@ -95,7 +96,7 @@ export default function WishlistPage() {
                     onClick={() => handleAddToCart(item.product_id || item.product.id)}
                     disabled={addingProductId === (item.product_id || item.product.id)}
                     className="p-2 rounded-lg bg-black text-white dark:bg-white dark:text-black disabled:opacity-50"
-                    title={addedProductId === (item.product_id || item.product.id) ? "Sudah masuk cart" : "Masukkan ke cart"}
+                    title={addedProductId === (item.product_id || item.product.id) ? "Sudah masuk keranjang" : "Masukkan ke keranjang"}
                   >
                     <ShoppingCart className="w-4 h-4" />
                   </button>

@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -581,6 +584,10 @@ func (h *AdminHandler) AddProductImage(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if !isAllowedProductImageURL(req.ImageURL) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "image_url host is not allowed; upload image or use approved CDN"})
+		return
+	}
 
 	image := model.ProductImage{
 		ProductID: productID,
@@ -604,12 +611,149 @@ func (h *AdminHandler) AddProductImage(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"message": "Product image added", "data": image})
 }
 
+func isAllowedProductImageURL(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return false
+	}
+	// Relative URLs must be served from our own uploads path.
+	if strings.HasPrefix(value, "/") {
+		return strings.HasPrefix(value, "/uploads/")
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return false
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	for _, allowed := range allowedProductImageHosts() {
+		if host == allowed {
+			return true
+		}
+	}
+	return false
+}
+
+func allowedProductImageHosts() []string {
+	seen := map[string]struct{}{}
+	var hosts []string
+	addHost := func(raw string) {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return
+		}
+		if strings.Contains(raw, "://") {
+			if u, err := url.Parse(raw); err == nil {
+				raw = u.Hostname()
+			}
+		}
+		raw = strings.ToLower(strings.TrimSpace(raw))
+		if raw == "" {
+			return
+		}
+		if _, ok := seen[raw]; ok {
+			return
+		}
+		seen[raw] = struct{}{}
+		hosts = append(hosts, raw)
+	}
+
+	// Optional explicit allowlist.
+	for _, item := range strings.Split(os.Getenv("PRODUCT_IMAGE_HOST_ALLOWLIST"), ",") {
+		addHost(item)
+	}
+
+	// Implicit allowlist from configured public upload/storage URLs.
+	addHost(os.Getenv("UPLOAD_PUBLIC_URL"))
+	addHost(os.Getenv("S3_PUBLIC_URL"))
+	addHost(os.Getenv("APP_URL"))
+
+	return hosts
+}
+
 func (h *AdminHandler) DeleteProductImage(c *gin.Context) {
-	if err := h.db.Where("id = ? AND product_id = ?", c.Param("image_id"), c.Param("id")).Delete(&model.ProductImage{}).Error; err != nil {
+	productID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid product id"})
+		return
+	}
+	imageID, err := uuid.Parse(c.Param("image_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid image id"})
+		return
+	}
+
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		var image model.ProductImage
+		if err := tx.Where("id = ? AND product_id = ?", imageID, productID).First(&image).Error; err != nil {
+			return err
+		}
+
+		wasPrimary := image.IsPrimary
+		if err := tx.Delete(&image).Error; err != nil {
+			return err
+		}
+
+		// If we deleted the primary image, promote another image to primary (if any remain).
+		if wasPrimary {
+			var next model.ProductImage
+			if err := tx.Where("product_id = ?", productID).
+				Order("sort_order asc, created_at asc").
+				First(&next).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return nil
+				}
+				return err
+			}
+			return tx.Model(&model.ProductImage{}).Where("id = ?", next.ID).Update("is_primary", true).Error
+		}
+
+		return nil
+	}); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "product image not found"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "Product image deleted"})
+}
+
+func (h *AdminHandler) SetPrimaryProductImage(c *gin.Context) {
+	productID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid product id"})
+		return
+	}
+	imageID, err := uuid.Parse(c.Param("image_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid image id"})
+		return
+	}
+
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		var image model.ProductImage
+		if err := tx.Where("id = ? AND product_id = ?", imageID, productID).First(&image).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.ProductImage{}).Where("product_id = ?", productID).Update("is_primary", false).Error; err != nil {
+			return err
+		}
+		return tx.Model(&model.ProductImage{}).Where("id = ?", imageID).Update("is_primary", true).Error
+	}); err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "record not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": "product image not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Primary product image updated"})
 }
 
 func (h *AdminHandler) logAdminActivity(c *gin.Context, action, entityType, entityID string, values interface{}) {

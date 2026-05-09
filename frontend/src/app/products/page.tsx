@@ -143,7 +143,7 @@ function CatalogPageContent() {
           <div className="text-center py-20 glass rounded-3xl">
             <Leaf className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <h2 className="text-2xl font-bold mb-2">{hasFilters ? "Tidak Ada Hasil" : "Belum Ada Produk"}</h2>
-            <p className="text-gray-500">{hasFilters ? "Coba ubah filter pencarian kamu." : "Stok anggrek sedang kosong atau belum ditambahkan."}</p>
+            <p className="text-gray-500">{hasFilters ? "Silakan ubah filter pencarian Anda." : "Stok anggrek sedang kosong atau belum ditambahkan."}</p>
             {hasFilters && <button onClick={clearFilters} className="mt-4 px-6 py-2 bg-black dark:bg-white text-white dark:text-black rounded-full font-bold text-sm">Reset Filter</button>}
           </div>
         ) : (

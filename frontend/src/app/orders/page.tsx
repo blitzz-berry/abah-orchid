@@ -21,7 +21,7 @@ const STATUS_MAP: Record<string, { label: string; color: string; icon: any }> = 
   COMPLETED: { label: "Selesai", color: "text-green-600 bg-green-50 dark:bg-green-900/20", icon: CheckCircle },
   CANCELLED: { label: "Dibatalkan", color: "text-red-600 bg-red-50 dark:bg-red-900/20", icon: XCircle },
   RETURN_REQUESTED: { label: "Retur", color: "text-orange-600 bg-orange-50 dark:bg-orange-900/20", icon: Package },
-  REFUNDED: { label: "Refund", color: "text-gray-600 bg-gray-50 dark:bg-gray-800", icon: XCircle },
+  REFUNDED: { label: "Dana Dikembalikan", color: "text-gray-600 bg-gray-50 dark:bg-gray-800", icon: XCircle },
 };
 
 const FILTERS = [
@@ -81,7 +81,7 @@ export default function OrdersPage() {
         <div className="flex flex-col gap-6 mb-8">
           <div>
             <h1 className="text-3xl font-extrabold tracking-tight mb-2">Pesanan Saya</h1>
-            <p className="text-sm text-gray-500">Pantau semua riwayat pesanan, pembayaran, dan pengiriman lu di sini.</p>
+            <p className="text-sm text-gray-500">Pantau semua riwayat pesanan, pembayaran, dan pengiriman Anda di sini.</p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -111,14 +111,14 @@ export default function OrdersPage() {
           <div className="text-center py-20 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-zinc-900">
             <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <h2 className="text-2xl font-bold mb-2">Belum Ada Pesanan</h2>
-            <p className="text-gray-500 mb-6">Yuk mulai belanja anggrek.</p>
+            <p className="text-gray-500 mb-6">Silakan mulai berbelanja anggrek.</p>
             <Link href="/products" className="bg-black text-white dark:bg-white dark:text-black px-6 py-3 rounded-xl font-bold text-sm">Mulai Belanja</Link>
           </div>
         ) : filteredOrders.length === 0 ? (
           <div className="text-center py-16 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-zinc-900">
             <Search className="w-12 h-12 text-gray-300 mx-auto mb-4" />
             <h2 className="text-xl font-bold mb-2">Pesanan tidak ditemukan</h2>
-            <p className="text-gray-500 text-sm">Coba ubah kata kunci atau filter status.</p>
+            <p className="text-gray-500 text-sm">Silakan ubah kata kunci atau filter status.</p>
           </div>
         ) : (
           <div className="flex flex-col gap-4">
@@ -195,13 +195,13 @@ function OrderHistoryCard({ order, idx }: { order: Order; idx: number }) {
           <div className="text-xs text-gray-500">{nextStepText(order.status, payment?.status)}</div>
           <div className="flex gap-2">
             {order.status === "PENDING_PAYMENT" && payment?.method === "manual_bank_transfer" && (
-              <Link href={`/orders/${order.id}`} className="px-3 py-2 rounded-lg bg-amber-50 text-amber-700 text-xs font-bold hover:bg-amber-100">Upload Bukti</Link>
+              <Link href={`/orders/${order.id}`} className="px-3 py-2 rounded-lg bg-amber-50 text-amber-700 text-xs font-bold hover:bg-amber-100">Unggah Bukti</Link>
             )}
             {order.status === "DELIVERED" && (
               <Link href={`/orders/${order.id}`} className="px-3 py-2 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold hover:bg-emerald-100">Konfirmasi Terima</Link>
             )}
             {order.status === "COMPLETED" && (
-              <Link href={`/orders/${order.id}`} className="px-3 py-2 rounded-lg bg-[var(--color-brand-50)] text-[var(--color-brand-700)] text-xs font-bold hover:bg-[var(--color-brand-100)]">Beri Review</Link>
+              <Link href={`/orders/${order.id}`} className="px-3 py-2 rounded-lg bg-[var(--color-brand-50)] text-[var(--color-brand-700)] text-xs font-bold hover:bg-[var(--color-brand-100)]">Beri Ulasan</Link>
             )}
             <Link href={`/orders/${order.id}`} className="px-3 py-2 rounded-lg bg-black text-white dark:bg-white dark:text-black text-xs font-bold">Detail</Link>
           </div>
@@ -229,14 +229,14 @@ function paymentMethodLabel(method: string) {
 
 function nextStepText(orderStatus: string, paymentStatus?: string) {
   if (orderStatus === "PENDING_PAYMENT") {
-    if (paymentStatus === "WAITING_CONFIRMATION") return "Bukti pembayaran lu sedang dicek admin.";
-    return "Selesaikan pembayaran supaya pesanan bisa diproses.";
+    if (paymentStatus === "WAITING_CONFIRMATION") return "Bukti pembayaran Anda sedang diperiksa oleh admin.";
+    return "Selesaikan pembayaran agar pesanan dapat diproses.";
   }
   if (orderStatus === "PAID") return "Pembayaran sudah diterima, pesanan menunggu diproses.";
   if (orderStatus === "PROCESSING") return "Pesanan sedang disiapkan oleh admin.";
   if (orderStatus === "SHIPPED") return "Pesanan sedang dalam pengiriman.";
-  if (orderStatus === "DELIVERED") return "Konfirmasi kalau pesanan sudah lu terima.";
-  if (orderStatus === "COMPLETED") return "Pesanan selesai. Lu bisa kasih review produk.";
+  if (orderStatus === "DELIVERED") return "Konfirmasi apabila pesanan sudah Anda terima.";
+  if (orderStatus === "COMPLETED") return "Pesanan selesai. Anda dapat memberikan ulasan produk.";
   if (orderStatus === "CANCELLED") return "Pesanan ini sudah dibatalkan.";
-  return "Cek detail pesanan untuk informasi lengkap.";
+  return "Lihat detail pesanan untuk informasi lengkap.";
 }

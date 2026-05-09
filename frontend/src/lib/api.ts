@@ -7,6 +7,13 @@ type RetriableRequestConfig = InternalAxiosRequestConfig & {
 
 let accessToken: string | null = null;
 
+function defaultAPIBaseURL() {
+  if (typeof window === 'undefined') return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api/v1';
+  if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
+  if (window.location.port === '3000') return 'http://localhost:8080/api/v1';
+  return '/api/v1';
+}
+
 export function setAccessToken(token: string | null | undefined) {
   accessToken = token || null;
 }
@@ -23,7 +30,7 @@ export function clearLegacyAuthStorage() {
 }
 
 const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api/v1',
+  baseURL: defaultAPIBaseURL(),
   withCredentials: true,
 });
 

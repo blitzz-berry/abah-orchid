@@ -6,6 +6,12 @@ import { AlertCircle, Edit2, ImagePlus, PackagePlus, Plus, Search, Trash2, X } f
 import { motion } from "framer-motion";
 import type { Category, Product } from "@/types";
 
+type NewProductImage = {
+  key: string;
+  file: File;
+  previewURL: string;
+};
+
 type ProductForm = {
   id?: string;
   name: string;
@@ -55,11 +61,15 @@ export default function AdminProductsPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [formData, setFormData] = useState<ProductForm>(emptyForm);
+  const [newProductImages, setNewProductImages] = useState<NewProductImage[]>([]);
+  const [newProductPrimaryImageKey, setNewProductPrimaryImageKey] = useState<string>("");
   const [isStockModalOpen, setIsStockModalOpen] = useState(false);
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
   const [activeProduct, setActiveProduct] = useState<Product | null>(null);
   const [stockData, setStockData] = useState({ quantity: 0, low_stock_threshold: 5, note: "" });
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [editUploadImages, setEditUploadImages] = useState<NewProductImage[]>([]);
+  const [editUploadPrimaryKey, setEditUploadPrimaryKey] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const fetchProducts = async () => {
@@ -91,10 +101,24 @@ export default function AdminProductsPage() {
 
   const openCreateModal = () => {
     setFormData({ ...emptyForm, category_id: categories[0]?.id || "" });
+    newProductImages.forEach((item) => URL.revokeObjectURL(item.previewURL));
+    setNewProductImages([]);
+    setNewProductPrimaryImageKey("");
+    editUploadImages.forEach((item) => URL.revokeObjectURL(item.previewURL));
+    setEditUploadImages([]);
+    setEditUploadPrimaryKey("");
+    setActiveProduct(null);
     setIsProductModalOpen(true);
   };
 
   const openEditModal = (product: Product) => {
+    newProductImages.forEach((item) => URL.revokeObjectURL(item.previewURL));
+    setNewProductImages([]);
+    setNewProductPrimaryImageKey("");
+    editUploadImages.forEach((item) => URL.revokeObjectURL(item.previewURL));
+    setEditUploadImages([]);
+    setEditUploadPrimaryKey("");
+    setActiveProduct(product);
     setFormData({
       id: product.id,
       name: product.name || "",
@@ -118,6 +142,26 @@ export default function AdminProductsPage() {
     setIsProductModalOpen(true);
   };
 
+  const closeProductModal = () => {
+    setIsProductModalOpen(false);
+    newProductImages.forEach((item) => URL.revokeObjectURL(item.previewURL));
+    setNewProductImages([]);
+    setNewProductPrimaryImageKey("");
+    editUploadImages.forEach((item) => URL.revokeObjectURL(item.previewURL));
+    setEditUploadImages([]);
+    setEditUploadPrimaryKey("");
+    setActiveProduct(null);
+  };
+
+  const refreshActiveProduct = async (productID: string) => {
+    try {
+      const res = await api.get(`/admin/products/${productID}`);
+      setActiveProduct(res.data?.data || null);
+    } catch {
+      // ignore; products list refresh will pick it up
+    }
+  };
+
   const productPayload = {
     ...formData,
     price: Number(formData.price),
@@ -132,7 +176,7 @@ export default function AdminProductsPage() {
   const handleProductSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.category_id) {
-      alert("Pilih kategori produk dulu.");
+      alert("Pilih kategori produk terlebih dahulu.");
       return;
     }
     setIsSubmitting(true);
@@ -140,10 +184,32 @@ export default function AdminProductsPage() {
       if (formData.id) {
         await api.put(`/admin/products/${formData.id}`, productPayload);
       } else {
-        await api.post("/admin/products", productPayload);
+        const created = await api.post("/admin/products", productPayload);
+        const createdId = created.data?.data?.id as string | undefined;
+        if (createdId && newProductImages.length > 0) {
+          const failures: string[] = [];
+          for (let index = 0; index < newProductImages.length; index++) {
+            const item = newProductImages[index];
+            const imagePayload = new FormData();
+            imagePayload.append("file", item.file);
+            imagePayload.append("is_primary", item.key === newProductPrimaryImageKey ? "true" : "false");
+            imagePayload.append("alt_text", newProductImages.length > 1 ? `${formData.name} ${index + 1}` : formData.name || "Gambar produk");
+            try {
+              await api.post(`/admin/products/${createdId}/images/upload`, imagePayload);
+            } catch (uploadErr: any) {
+              failures.push(uploadErr.response?.data?.error || uploadErr.message || `unggah gambar ${index + 1} gagal`);
+            }
+          }
+          if (failures.length > 0) {
+            alert(`Produk berhasil dibuat, tetapi ${failures.length} unggah gambar gagal: ${failures[0]}`);
+          }
+        }
       }
       setIsProductModalOpen(false);
       setFormData(emptyForm);
+      newProductImages.forEach((item) => URL.revokeObjectURL(item.previewURL));
+      setNewProductImages([]);
+      setNewProductPrimaryImageKey("");
       await fetchProducts();
     } catch (e: any) {
       alert("Gagal menyimpan produk: " + (e.response?.data?.error || e.message));
@@ -164,7 +230,7 @@ export default function AdminProductsPage() {
       setIsStockModalOpen(false);
       await fetchProducts();
     } catch (e: any) {
-      alert("Gagal update stok: " + (e.response?.data?.error || e.message));
+      alert("Gagal memperbarui stok: " + (e.response?.data?.error || e.message));
     }
   };
 
@@ -176,14 +242,12 @@ export default function AdminProductsPage() {
     payload.append("is_primary", activeProduct.images?.length ? "false" : "true");
 
     try {
-      await api.post(`/admin/products/${activeProduct.id}/images/upload`, payload, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      await api.post(`/admin/products/${activeProduct.id}/images/upload`, payload);
       setIsImageModalOpen(false);
       setImageFile(null);
       await fetchProducts();
     } catch (e: any) {
-      alert("Gagal upload gambar: " + (e.response?.data?.error || e.message));
+      alert("Gagal unggah gambar: " + (e.response?.data?.error || e.message));
     }
   };
 
@@ -267,7 +331,7 @@ export default function AdminProductsPage() {
                     <td className="p-4">
                       <div className="flex gap-1.5 justify-end">
                         <button onClick={() => { setActiveProduct(product); setStockData({ quantity: stock, low_stock_threshold: threshold, note: "" }); setIsStockModalOpen(true); }} className="p-2 bg-[var(--color-leaf-50)] text-[var(--color-leaf-600)] rounded-lg hover:bg-[var(--color-leaf-100)]" title="Koreksi Stok"><PackagePlus className="w-4 h-4" /></button>
-                        <button onClick={() => { setActiveProduct(product); setIsImageModalOpen(true); }} className="p-2 bg-amber-50 text-amber-600 rounded-lg hover:bg-amber-100" title="Upload Gambar"><ImagePlus className="w-4 h-4" /></button>
+                        <button onClick={() => { setActiveProduct(product); setIsImageModalOpen(true); }} className="p-2 bg-amber-50 text-amber-600 rounded-lg hover:bg-amber-100" title="Unggah Gambar"><ImagePlus className="w-4 h-4" /></button>
                         <button onClick={() => openEditModal(product)} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100" title="Edit Produk"><Edit2 className="w-4 h-4" /></button>
                         <button onClick={() => handleDelete(product.id)} className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100" title="Hapus Produk"><Trash2 className="w-4 h-4" /></button>
                       </div>
@@ -285,9 +349,225 @@ export default function AdminProductsPage() {
           <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 w-full max-w-3xl shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-xl font-bold">{formData.id ? "Edit Produk" : "Tambah Produk"}</h2>
-              <button onClick={() => setIsProductModalOpen(false)} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-zinc-800"><X className="w-4 h-4" /></button>
+              <button onClick={closeProductModal} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-zinc-800"><X className="w-4 h-4" /></button>
             </div>
             <form onSubmit={handleProductSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {!formData.id && (
+                <div className="md:col-span-2">
+                  <label className="text-sm font-medium mb-1 block">Gambar Produk</label>
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files || []);
+                      newProductImages.forEach((item) => URL.revokeObjectURL(item.previewURL));
+                      const next = files.map((file) => ({
+                        key: `${file.name}-${file.size}-${file.lastModified}`,
+                        file,
+                        previewURL: URL.createObjectURL(file),
+                      }));
+                      setNewProductImages(next);
+                      setNewProductPrimaryImageKey(next[0]?.key || "");
+                    }}
+                    className="w-full text-sm"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Bisa pilih banyak. Format JPG, PNG, atau WebP. Maksimal 5MB per gambar.</p>
+
+                  {newProductImages.length > 0 ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mt-4">
+                      {newProductImages.map((item) => (
+                        <div key={item.key} className="rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden bg-gray-50 dark:bg-black">
+                          <div className="w-full h-28">
+                            <img src={item.previewURL} alt="Preview" className="w-full h-full object-cover" />
+                          </div>
+                          <div className="p-2 flex flex-col gap-2">
+                            <label className="flex items-center gap-2 text-xs font-bold">
+                              <input
+                                type="radio"
+                                name="new-product-primary-image"
+                                checked={newProductPrimaryImageKey === item.key}
+                                onChange={() => setNewProductPrimaryImageKey(item.key)}
+                              />
+                              Utama
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                URL.revokeObjectURL(item.previewURL);
+                                const next = newProductImages.filter((img) => img.key !== item.key);
+                                setNewProductImages(next);
+                                if (newProductPrimaryImageKey === item.key) setNewProductPrimaryImageKey(next[0]?.key || "");
+                              }}
+                              className="w-full px-3 py-2 rounded-xl text-xs font-bold border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-zinc-800"
+                            >
+                              Hapus
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-4 text-xs text-gray-400 flex items-center gap-2">
+                      <ImagePlus className="w-4 h-4" /> Belum ada gambar dipilih
+                    </div>
+                  )}
+                </div>
+              )}
+              {formData.id && (
+                <div className="md:col-span-2">
+                  <label className="text-sm font-medium mb-1 block">Gambar Produk</label>
+                  <p className="text-xs text-gray-500">Pilih utama, hapus gambar, atau unggah gambar tambahan.</p>
+
+                  {(activeProduct?.images?.length || 0) > 0 ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mt-3">
+                      {(activeProduct?.images || []).map((img) => (
+                        <div key={img.id} className="rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden bg-gray-50 dark:bg-black">
+                          <div className="w-full h-28">
+                            <img src={img.image_url} alt={img.alt_text || formData.name} className="w-full h-full object-cover" />
+                          </div>
+                          <div className="p-2 flex flex-col gap-2">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className={`font-bold ${img.is_primary ? "text-[var(--color-leaf-600)]" : "text-gray-500"}`}>{img.is_primary ? "UTAMA" : " "}</span>
+                              {!img.is_primary && (
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    if (!formData.id) return;
+                                    try {
+                                      await api.put(`/admin/products/${formData.id}/images/${img.id}/primary`);
+                                      await refreshActiveProduct(formData.id);
+                                      await fetchProducts();
+                                    } catch (e: any) {
+                                      alert("Gagal menetapkan gambar utama: " + (e.response?.data?.error || e.message));
+                                    }
+                                  }}
+                                  className="px-3 py-1.5 rounded-xl text-[10px] font-bold border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-zinc-800"
+                                >
+                                  Jadikan Utama
+                                </button>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (!formData.id) return;
+                                if (!confirm("Hapus gambar ini?")) return;
+                                try {
+                                  await api.delete(`/admin/products/${formData.id}/images/${img.id}`);
+                                  await refreshActiveProduct(formData.id);
+                                  await fetchProducts();
+                                } catch (e: any) {
+                                  alert("Gagal hapus gambar: " + (e.response?.data?.error || e.message));
+                                }
+                              }}
+                              className="w-full px-3 py-2 rounded-xl text-xs font-bold border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-zinc-800"
+                            >
+                              Hapus
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-3 text-xs text-gray-400 flex items-center gap-2">
+                      <ImagePlus className="w-4 h-4" /> Belum ada gambar
+                    </div>
+                  )}
+
+                  <div className="mt-4 rounded-2xl border border-gray-200 dark:border-gray-800 p-4">
+                    <div className="font-bold text-sm mb-2">Unggah Gambar Tambahan</div>
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/jpeg,image/png,image/webp"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        editUploadImages.forEach((item) => URL.revokeObjectURL(item.previewURL));
+                        const next = files.map((file) => ({
+                          key: `${file.name}-${file.size}-${file.lastModified}`,
+                          file,
+                          previewURL: URL.createObjectURL(file),
+                        }));
+                        setEditUploadImages(next);
+                        setEditUploadPrimaryKey(next[0]?.key || "");
+                      }}
+                      className="w-full text-sm"
+                    />
+                    {editUploadImages.length > 0 && (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mt-3">
+                        {editUploadImages.map((item) => (
+                          <div key={item.key} className="rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden bg-gray-50 dark:bg-black">
+                            <div className="w-full h-24">
+                              <img src={item.previewURL} alt="Preview" className="w-full h-full object-cover" />
+                            </div>
+                            <div className="p-2 flex flex-col gap-2">
+                              <label className="flex items-center gap-2 text-xs font-bold">
+                                <input
+                                  type="radio"
+                                  name="edit-upload-primary-image"
+                                  checked={editUploadPrimaryKey === item.key}
+                                  onChange={() => setEditUploadPrimaryKey(item.key)}
+                                />
+                                Utama
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  URL.revokeObjectURL(item.previewURL);
+                                  const next = editUploadImages.filter((img) => img.key !== item.key);
+                                  setEditUploadImages(next);
+                                  if (editUploadPrimaryKey === item.key) setEditUploadPrimaryKey(next[0]?.key || "");
+                                }}
+                                className="w-full px-3 py-2 rounded-xl text-xs font-bold border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-zinc-800"
+                              >
+                                Hapus
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="flex justify-end gap-2 mt-3">
+                      <button
+                        type="button"
+                        disabled={isSubmitting || editUploadImages.length === 0}
+                        onClick={async () => {
+                          if (!formData.id || editUploadImages.length === 0) return;
+                          setIsSubmitting(true);
+                          try {
+                            const failures: string[] = [];
+                            for (let index = 0; index < editUploadImages.length; index++) {
+                              const item = editUploadImages[index];
+                              const payload = new FormData();
+                              payload.append("file", item.file);
+                              payload.append("is_primary", item.key === editUploadPrimaryKey ? "true" : "false");
+                              payload.append("alt_text", editUploadImages.length > 1 ? `${formData.name} ${index + 1}` : formData.name || "Gambar produk");
+                              try {
+                                await api.post(`/admin/products/${formData.id}/images/upload`, payload);
+                              } catch (err: any) {
+                                failures.push(err.response?.data?.error || err.message || `unggah gambar ${index + 1} gagal`);
+                              }
+                            }
+                            editUploadImages.forEach((item) => URL.revokeObjectURL(item.previewURL));
+                            setEditUploadImages([]);
+                            setEditUploadPrimaryKey("");
+                            await refreshActiveProduct(formData.id);
+                            await fetchProducts();
+                            if (failures.length > 0) alert(`Sebagian unggah gagal: ${failures[0]}`);
+                          } finally {
+                            setIsSubmitting(false);
+                          }
+                        }}
+                        className="bg-amber-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm disabled:opacity-50"
+                      >
+                        {isSubmitting ? "Mengunggah..." : "Unggah Gambar"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
               <Input label="Nama Produk" required value={formData.name} onChange={(value) => setField("name", value)} />
               <Input label="Nama Varietas" value={formData.variety_name} onChange={(value) => setField("variety_name", value)} />
               <div>
@@ -344,7 +624,7 @@ export default function AdminProductsPage() {
               <Input label="Tags" value={formData.tags} onChange={(value) => setField("tags", value)} placeholder="rare, bestseller, promo" />
               <Input label="Tips Perawatan" value={formData.care_tips} onChange={(value) => setField("care_tips", value)} />
               <div className="md:col-span-2 flex justify-end gap-2 mt-2">
-                <button type="button" onClick={() => setIsProductModalOpen(false)} className="px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-gray-100 dark:hover:bg-zinc-800">Batal</button>
+                <button type="button" onClick={closeProductModal} className="px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-gray-100 dark:hover:bg-zinc-800">Batal</button>
                 <button type="submit" disabled={isSubmitting} className="bg-[var(--color-brand-600)] text-white px-5 py-2.5 rounded-xl font-bold text-sm disabled:opacity-50">{isSubmitting ? "Menyimpan..." : "Simpan"}</button>
               </div>
             </form>
@@ -363,7 +643,7 @@ export default function AdminProductsPage() {
               <Input label="Catatan" required placeholder="Alasan koreksi" value={stockData.note} onChange={(value) => setStockData((prev) => ({ ...prev, note: value }))} />
               <div className="flex justify-end gap-2 mt-2">
                 <button type="button" onClick={() => setIsStockModalOpen(false)} className="px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-gray-100 dark:hover:bg-zinc-800">Batal</button>
-                <button type="submit" className="bg-[var(--color-leaf-600)] text-white px-5 py-2.5 rounded-xl font-bold text-sm">Update</button>
+                <button type="submit" className="bg-[var(--color-leaf-600)] text-white px-5 py-2.5 rounded-xl font-bold text-sm">Perbarui</button>
               </div>
             </form>
           </div>
@@ -373,14 +653,14 @@ export default function AdminProductsPage() {
       {isImageModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
-            <h2 className="text-xl font-bold mb-2">Upload Gambar</h2>
+            <h2 className="text-xl font-bold mb-2">Unggah Gambar</h2>
             <p className="text-gray-500 text-sm mb-5">{activeProduct?.name}</p>
             <form onSubmit={handleImageSubmit} className="flex flex-col gap-4">
               <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => setImageFile(e.target.files?.[0] || null)} className="w-full text-sm" />
               <p className="text-xs text-gray-500">Format JPG, PNG, atau WebP. Maksimal 5MB.</p>
               <div className="flex justify-end gap-2 mt-2">
                 <button type="button" onClick={() => setIsImageModalOpen(false)} className="px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-gray-100 dark:hover:bg-zinc-800">Batal</button>
-                <button type="submit" disabled={!imageFile} className="bg-amber-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm disabled:opacity-50">Upload</button>
+                <button type="submit" disabled={!imageFile} className="bg-amber-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm disabled:opacity-50">Unggah</button>
               </div>
             </form>
           </div>

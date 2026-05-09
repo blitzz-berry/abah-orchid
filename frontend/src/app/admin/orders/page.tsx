@@ -1,49 +1,87 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import api from "@/lib/api";
-import { Search, Truck, CheckCircle, ExternalLink, Eye, X, FileText } from "lucide-react";
+import { CheckCircle, ExternalLink, Eye, FileText, Search, Truck } from "lucide-react";
 import { motion } from "framer-motion";
+import api from "@/lib/api";
 import { createAuthorizedUploadObjectURL, openUploadURL, resolveUploadURL } from "@/lib/uploads";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 
-const STATUSES = ["", "PENDING_PAYMENT", "PAID", "PROCESSING", "SHIPPED", "DELIVERED", "COMPLETED", "CANCELLED"];
+const STATUSES = ["PENDING_PAYMENT", "PAID", "PROCESSING", "SHIPPED", "DELIVERED", "COMPLETED", "CANCELLED"];
 const STATUS_LABELS: Record<string, string> = { PENDING_PAYMENT: "Menunggu Bayar", PAID: "Dibayar", PROCESSING: "Diproses", SHIPPED: "Dikirim", DELIVERED: "Diterima", COMPLETED: "Selesai", CANCELLED: "Batal" };
-const STATUS_COLORS: Record<string, string> = { PENDING_PAYMENT: "text-amber-600 bg-amber-50", PAID: "text-blue-600 bg-blue-50", PROCESSING: "text-purple-600 bg-purple-50", SHIPPED: "text-cyan-600 bg-cyan-50", DELIVERED: "text-emerald-600 bg-emerald-50", COMPLETED: "text-green-600 bg-green-50", CANCELLED: "text-red-600 bg-red-50" };
+const STATUS_STYLES: Record<string, string> = {
+  PENDING_PAYMENT: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200",
+  PAID: "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200",
+  PROCESSING: "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700 dark:border-fuchsia-900 dark:bg-fuchsia-950/30 dark:text-fuchsia-200",
+  SHIPPED: "border-cyan-200 bg-cyan-50 text-cyan-700 dark:border-cyan-900 dark:bg-cyan-950/30 dark:text-cyan-200",
+  DELIVERED: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200",
+  COMPLETED: "border-green-200 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-950/30 dark:text-green-200",
+  CANCELLED: "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200",
+};
 
 export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [filterStatus, setFilterStatus] = useState("");
+  const [filterStatus, setFilterStatus] = useState("all");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<any>(null);
   const [proofPreview, setProofPreview] = useState<{ url: string; sourceURL: string; objectURL?: string; orderNumber: string; payment: any } | null>(null);
   const [trackingInput, setTrackingInput] = useState("");
 
   useEffect(() => {
-    const f = async () => { try { const r = await api.get("/admin/orders"); setOrders(r.data.data || []); } catch {} finally { setIsLoading(false); } };
-    f();
+    const fetchOrders = async () => {
+      try {
+        const response = await api.get("/admin/orders");
+        setOrders(response.data.data || []);
+      } catch {
+        setOrders([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    void fetchOrders();
   }, []);
 
   const handleUpdateStatus = async (id: string, status: string) => {
-    try { await api.put(`/admin/orders/${id}/status`, { status }); setOrders(prev => prev.map(o => o.id === id ? { ...o, status } : o)); } catch (e: any) { alert("Gagal: " + (e.response?.data?.error || e.message)); }
-  };
-
-  const handleConfirmPayment = async (id: string) => {
     try {
-      await api.post(`/admin/orders/${id}/confirm-payment`);
-      setOrders(prev => prev.map(o => o.id === id ? {
-        ...o,
-        status: "PAID",
-        payments: o.payments?.map((p: any) => ({ ...p, status: "PAID" })) || o.payments,
-      } : o));
+      await api.put(`/admin/orders/${id}/status`, { status });
+      setOrders((prev) => prev.map((order) => order.id === id ? { ...order, status } : order));
     } catch (e: any) {
       alert("Gagal: " + (e.response?.data?.error || e.message));
     }
   };
 
-  const handleInputTracking = async (id: string) => {
-    if (!trackingInput) return;
-    try { await api.put(`/admin/orders/${id}/tracking`, { tracking_number: trackingInput }); setOrders(prev => prev.map(o => o.id === id ? { ...o, tracking_number: trackingInput, status: "SHIPPED" } : o)); setTrackingInput(""); setSelected(null); } catch (e: any) { alert("Gagal: " + (e.response?.data?.error || e.message)); }
+  const handleConfirmPayment = async (id: string) => {
+    try {
+      await api.post(`/admin/orders/${id}/confirm-payment`);
+      setOrders((prev) => prev.map((order) => order.id === id ? {
+        ...order,
+        status: "PAID",
+        payments: order.payments?.map((payment: any) => ({ ...payment, status: "PAID" })) || order.payments,
+      } : order));
+    } catch (e: any) {
+      alert("Gagal: " + (e.response?.data?.error || e.message));
+    }
+  };
+
+  const handleInputTracking = async () => {
+    if (!selected || !trackingInput.trim()) return;
+    try {
+      await api.put(`/admin/orders/${selected.id}/tracking`, { tracking_number: trackingInput.trim() });
+      setOrders((prev) => prev.map((order) => order.id === selected.id ? { ...order, tracking_number: trackingInput.trim(), status: "SHIPPED" } : order));
+      setTrackingInput("");
+      setSelected(null);
+    } catch (e: any) {
+      alert("Gagal: " + (e.response?.data?.error || e.message));
+    }
   };
 
   const closeProofPreview = () => {
@@ -61,135 +99,157 @@ export default function AdminOrdersPage() {
     }
   };
 
-  const filtered = orders.filter(o => {
-    if (filterStatus && o.status !== filterStatus) return false;
-    if (search && !o.order_number?.toLowerCase().includes(search.toLowerCase()) && !o.shipping_name?.toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
+  const filtered = orders.filter((order) => {
+    if (filterStatus !== "all" && order.status !== filterStatus) return false;
+    const keyword = search.trim().toLowerCase();
+    if (!keyword) return true;
+    return order.order_number?.toLowerCase().includes(keyword) || order.shipping_name?.toLowerCase().includes(keyword);
   });
 
   return (
     <div className="p-6 md:p-8">
-      <div className="mb-8"><h1 className="text-3xl font-extrabold mb-1">Manajemen Pesanan</h1><p className="text-gray-500 text-sm">Kelola dan proses pesanan pelanggan</p></div>
-
-      <div className="flex flex-col sm:flex-row gap-3 mb-6">
-        <div className="relative flex-1 max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Cari order/nama..." className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-xl text-sm" /></div>
-        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-xl px-4 py-2.5 text-sm font-medium"><option value="">Semua Status</option>{STATUSES.filter(Boolean).map(s => <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>)}</select>
+      <div className="mb-8">
+        <h1 className="text-3xl font-extrabold mb-1">Manajemen Pesanan</h1>
+        <p className="text-muted-foreground text-sm">Kelola pembayaran, status proses, resi, dan pengiriman pelanggan.</p>
       </div>
 
-      <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead><tr className="border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-zinc-950">
-              <th className="p-4 text-xs font-bold text-gray-500 uppercase">Order</th>
-              <th className="p-4 text-xs font-bold text-gray-500 uppercase">Pelanggan</th>
-              <th className="p-4 text-xs font-bold text-gray-500 uppercase">Total</th>
-              <th className="p-4 text-xs font-bold text-gray-500 uppercase">Status</th>
-              <th className="p-4 text-xs font-bold text-gray-500 uppercase">Pembayaran</th>
-              <th className="p-4 text-xs font-bold text-gray-500 uppercase">Tanggal</th>
-              <th className="p-4 text-xs font-bold text-gray-500 uppercase text-right">Aksi</th>
-            </tr></thead>
-            <tbody>
-              {isLoading ? <tr><td colSpan={7} className="p-8 text-center"><div className="w-6 h-6 border-2 border-t-[var(--color-brand-600)] rounded-full animate-spin mx-auto" /></td></tr>
-              : filtered.length === 0 ? <tr><td colSpan={7} className="p-8 text-center text-gray-500 text-sm">Tidak ada pesanan</td></tr>
-              : filtered.map(o => {
-                const payment = o.payments?.[0] || o.payment || null;
-                const proofURL = payment?.proof_image_url ? resolveUploadURL(payment.proof_image_url) : "";
-                const isManualTransfer = payment?.method === "manual_bank_transfer" || payment?.method === "bank_transfer";
-                return (
-                <motion.tr key={o.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-zinc-900/50">
-                  <td className="p-4 font-bold text-sm">{o.order_number}</td>
-                  <td className="p-4"><div className="text-sm">{o.shipping_name || o.user?.full_name}</div><div className="text-xs text-gray-500">{o.shipping_phone}</div></td>
-                  <td className="p-4 font-medium text-sm">Rp {o.total?.toLocaleString("id-ID")}</td>
-                  <td className="p-4"><span className={`text-[10px] font-bold px-2 py-1 rounded-full ${STATUS_COLORS[o.status] || "bg-gray-100"}`}>{STATUS_LABELS[o.status] || o.status}</span></td>
-                  <td className="p-4">
-                    {payment ? (
-                      <div className="space-y-1 text-xs">
-                        <div className="font-semibold">{paymentMethodLabel(payment.method)}</div>
-                        <div className="text-gray-500">{paymentStatusLabel(payment.status)}</div>
-                        {proofURL ? (
-                          <button type="button" onClick={() => void handlePreviewProof(proofURL, o.order_number, payment)} className="inline-flex items-center gap-1 rounded-lg bg-[var(--color-brand-50)] px-2 py-1 font-bold text-[var(--color-brand-600)] hover:bg-[var(--color-brand-100)]">
-                            <Eye className="w-3 h-3" /> Lihat bukti
-                          </button>
-                        ) : isManualTransfer ? (
-                          <div className="text-amber-600">Menunggu upload bukti</div>
-                        ) : (
-                          <div className="text-gray-400">Belum ada bukti</div>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-xs text-gray-400">Belum ada data</span>
-                    )}
-                  </td>
-                  <td className="p-4 text-xs text-gray-500">{new Date(o.created_at).toLocaleDateString("id-ID")}</td>
-                  <td className="p-4"><div className="flex gap-1.5 justify-end">
-                    {o.status === "PAID" && <button onClick={() => handleUpdateStatus(o.id, "PROCESSING")} className="text-xs px-3 py-1.5 bg-purple-50 text-purple-600 rounded-lg font-bold hover:bg-purple-100">Proses</button>}
-                    {o.status === "PROCESSING" && <button onClick={() => { setSelected(o); setTrackingInput(""); }} className="text-xs px-3 py-1.5 bg-cyan-50 text-cyan-600 rounded-lg font-bold hover:bg-cyan-100 flex items-center gap-1"><Truck className="w-3 h-3" /> Resi</button>}
-                    {o.status === "SHIPPED" && <button onClick={() => handleUpdateStatus(o.id, "DELIVERED")} className="text-xs px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-lg font-bold hover:bg-emerald-100">Tandai Diterima</button>}
-                    {o.status === "PENDING_PAYMENT" && payment?.status === "WAITING_CONFIRMATION" && <button onClick={() => handleConfirmPayment(o.id)} className="text-xs px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-lg font-bold hover:bg-emerald-100"><CheckCircle className="w-3 h-3 inline mr-1" />Konfirmasi</button>}
-                  </div></td>
-                </motion.tr>
-              )})}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Tracking Modal */}
-      {selected && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
-            <h2 className="text-xl font-bold mb-2">Input Resi</h2>
-            <p className="text-gray-500 text-sm mb-5">{selected.order_number}</p>
-            <input value={trackingInput} onChange={e => setTrackingInput(e.target.value)} placeholder="Nomor resi pengiriman" className="w-full bg-gray-50 dark:bg-black border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm mb-4" />
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setSelected(null)} className="px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-gray-100 dark:hover:bg-zinc-800">Batal</button>
-              <button onClick={() => handleInputTracking(selected.id)} className="bg-cyan-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm">Kirim</button>
+      <Card>
+        <CardHeader className="gap-4 border-b pb-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <CardTitle>Daftar Pesanan</CardTitle>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <div className="relative w-full sm:w-72">
+                <Search className="text-muted-foreground absolute left-3 top-1/2 size-4 -translate-y-1/2" />
+                <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari order/nama..." className="pl-9" />
+              </div>
+              <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <SelectTrigger className="w-full sm:w-48">
+                  <SelectValue placeholder="Semua Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Status</SelectItem>
+                  {STATUSES.map((status) => <SelectItem key={status} value={status}>{STATUS_LABELS[status] || status}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
           </div>
-        </div>
-      )}
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/40 hover:bg-muted/40">
+                <TableHead>Order</TableHead>
+                <TableHead>Pelanggan</TableHead>
+                <TableHead>Total</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Pembayaran</TableHead>
+                <TableHead>Tanggal</TableHead>
+                <TableHead className="text-right">Aksi</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                <TableRow><TableCell colSpan={7} className="h-24 text-center text-muted-foreground">Memuat pesanan...</TableCell></TableRow>
+              ) : filtered.length === 0 ? (
+                <TableRow><TableCell colSpan={7} className="h-24 text-center text-muted-foreground">Tidak ada pesanan</TableCell></TableRow>
+              ) : filtered.map((order) => {
+                const payment = order.payments?.[0] || order.payment || null;
+                const proofURL = payment?.proof_image_url ? resolveUploadURL(payment.proof_image_url) : "";
+                const isManualTransfer = payment?.method === "manual_bank_transfer" || payment?.method === "bank_transfer";
 
-      {proofPreview && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-zinc-900 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden shadow-2xl">
-            <div className="flex items-start justify-between gap-4 border-b border-gray-200 dark:border-gray-800 p-5">
-              <div>
-                <h2 className="text-xl font-bold">Bukti Pembayaran</h2>
-                <p className="text-sm text-gray-500">{proofPreview.orderNumber} - {paymentStatusLabel(proofPreview.payment?.status || "")}</p>
-              </div>
-              <button onClick={closeProofPreview} className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-zinc-800" aria-label="Tutup preview bukti pembayaran">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-5">
+                return (
+                  <motion.tr key={order.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="border-b transition-colors hover:bg-muted/50">
+                    <TableCell className="font-semibold">{order.order_number}</TableCell>
+                    <TableCell>
+                      <div>{order.shipping_name || order.user?.full_name}</div>
+                      <div className="text-xs text-muted-foreground">{order.shipping_phone}</div>
+                    </TableCell>
+                    <TableCell className="font-medium">Rp {order.total?.toLocaleString("id-ID")}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={cn("font-semibold", STATUS_STYLES[order.status])}>{STATUS_LABELS[order.status] || order.status}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      {payment ? (
+                        <div className="space-y-1 text-xs">
+                          <div className="font-semibold">{paymentMethodLabel(payment.method)}</div>
+                          <div className="text-muted-foreground">{paymentStatusLabel(payment.status)}</div>
+                          {proofURL ? (
+                            <Button type="button" variant="link" size="sm" onClick={() => void handlePreviewProof(proofURL, order.order_number, payment)} className="h-auto px-0 py-0 text-xs">
+                              <Eye /> Lihat bukti
+                            </Button>
+                          ) : isManualTransfer ? (
+                            <div className="text-amber-600">Menunggu unggah bukti</div>
+                          ) : (
+                            <div className="text-muted-foreground">Belum ada bukti</div>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Belum ada data</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{new Date(order.created_at).toLocaleDateString("id-ID")}</TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-1.5">
+                        {order.status === "PAID" && <Button size="sm" variant="secondary" onClick={() => handleUpdateStatus(order.id, "PROCESSING")}>Proses</Button>}
+                        {order.status === "PROCESSING" && <Button size="sm" variant="secondary" onClick={() => { setSelected(order); setTrackingInput(""); }}><Truck /> Resi</Button>}
+                        {order.status === "SHIPPED" && <Button size="sm" variant="secondary" onClick={() => handleUpdateStatus(order.id, "DELIVERED")}>Tandai Diterima</Button>}
+                        {order.status === "PENDING_PAYMENT" && payment?.status === "WAITING_CONFIRMATION" && <Button size="sm" onClick={() => handleConfirmPayment(order.id)}><CheckCircle /> Konfirmasi</Button>}
+                      </div>
+                    </TableCell>
+                  </motion.tr>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Dialog open={Boolean(selected)} onOpenChange={(open) => { if (!open) setSelected(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Input Resi</DialogTitle>
+            <DialogDescription>{selected?.order_number}</DialogDescription>
+          </DialogHeader>
+          <Input value={trackingInput} onChange={(event) => setTrackingInput(event.target.value)} placeholder="Nomor resi pengiriman" />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSelected(null)}>Batal</Button>
+            <Button onClick={handleInputTracking}>Kirim</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(proofPreview)} onOpenChange={(open) => { if (!open) closeProofPreview(); }}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Bukti Pembayaran</DialogTitle>
+            <DialogDescription>{proofPreview?.orderNumber} - {paymentStatusLabel(proofPreview?.payment?.status || "")}</DialogDescription>
+          </DialogHeader>
+          {proofPreview && (
+            <>
               {isPDFProof(proofPreview.sourceURL) ? (
-                <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-gray-300 dark:border-gray-700 p-10 text-center">
-                  <FileText className="w-12 h-12 text-gray-400 mb-3" />
-                  <div className="font-bold mb-1">Bukti pembayaran berupa PDF</div>
-                  <p className="text-sm text-gray-500 mb-5">Buka file di tab baru untuk melihat detail bukti transfer.</p>
-                  <button type="button" onClick={() => void openUploadURL(proofPreview.sourceURL)} className="inline-flex items-center gap-2 rounded-xl bg-black px-4 py-2.5 text-sm font-bold text-white dark:bg-white dark:text-black">
-                    Buka PDF <ExternalLink className="w-4 h-4" />
-                  </button>
+                <div className="flex flex-col items-center justify-center rounded-lg border border-dashed p-10 text-center">
+                  <FileText className="mb-3 size-12 text-muted-foreground" />
+                  <div className="font-semibold mb-1">Bukti pembayaran berupa PDF</div>
+                  <p className="text-sm text-muted-foreground mb-5">Buka file di tab baru untuk melihat detail bukti transfer.</p>
+                  <Button type="button" onClick={() => void openUploadURL(proofPreview.sourceURL)}>Buka PDF <ExternalLink /></Button>
                 </div>
               ) : (
-                <div className="rounded-2xl bg-gray-50 dark:bg-black overflow-hidden">
+                <div className="rounded-lg bg-muted overflow-hidden">
                   <img src={proofPreview.url} alt={`Bukti pembayaran ${proofPreview.orderNumber}`} className="max-h-[65vh] w-full object-contain" />
                 </div>
               )}
-              <div className="mt-4 flex justify-end gap-2">
-                <button type="button" onClick={() => void openUploadURL(proofPreview.sourceURL)} className="inline-flex items-center gap-2 rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-bold hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-zinc-800">
-                  Buka Tab Baru <ExternalLink className="w-4 h-4" />
-                </button>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => void openUploadURL(proofPreview.sourceURL)}>Buka Tab Baru <ExternalLink /></Button>
                 {proofPreview.payment?.status === "WAITING_CONFIRMATION" && (
-                  <button onClick={() => { void handleConfirmPayment(proofPreview.payment.order_id); setProofPreview(null); }} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700">
-                    <CheckCircle className="w-4 h-4" /> Konfirmasi Pembayaran
-                  </button>
+                  <Button onClick={() => { void handleConfirmPayment(proofPreview.payment.order_id); closeProofPreview(); }}>
+                    <CheckCircle /> Konfirmasi Pembayaran
+                  </Button>
                 )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -217,7 +277,7 @@ function paymentStatusLabel(status: string) {
     case "PAID":
       return "Dibayar";
     case "PENDING":
-      return "Pending";
+      return "Menunggu";
     case "EXPIRED":
       return "Kedaluwarsa";
     default:

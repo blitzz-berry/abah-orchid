@@ -3,6 +3,8 @@ package service
 import (
 	"errors"
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,6 +17,7 @@ import (
 	"orchidmart-backend/internal/dto/request"
 	"orchidmart-backend/internal/model"
 	midtransPkg "orchidmart-backend/internal/pkg/midtrans"
+	"orchidmart-backend/internal/pkg/rajaongkir"
 	"orchidmart-backend/internal/repository"
 )
 
@@ -55,6 +58,7 @@ func (s *orderService) Checkout(userID string, req request.CheckoutRequest) (*mo
 	}
 
 	var subtotal float64
+	var totalWeightGram int
 	var orderItems []model.OrderItem
 	selectedItemIDs := normalizeIDSet(req.CartItemIDs)
 
@@ -66,6 +70,9 @@ func (s *orderService) Checkout(userID string, req request.CheckoutRequest) (*mo
 		}
 		itemSubtotal := item.Product.Price * float64(item.Quantity)
 		subtotal += itemSubtotal
+		if item.Product.WeightGram > 0 {
+			totalWeightGram += item.Product.WeightGram * item.Quantity
+		}
 
 		orderItems = append(orderItems, model.OrderItem{
 			ProductID:       item.ProductID,
@@ -80,15 +87,15 @@ func (s *orderService) Checkout(userID string, req request.CheckoutRequest) (*mo
 	if len(orderItems) == 0 {
 		return nil, "", errors.New("no selected cart items found")
 	}
+	if totalWeightGram <= 0 {
+		totalWeightGram = 1000
+	}
 
 	discount, err := s.calculateDiscount(req.CouponCode, subtotal)
 	if err != nil {
 		return nil, "", err
 	}
-	total := subtotal + req.ShippingCost + req.InsuranceCost + req.PackingCost - discount
-	if total < 0 {
-		total = 0
-	}
+
 	expiredAt := time.Now().Add(24 * time.Hour)
 	paymentMethod := normalizePaymentMethod(req.PaymentMethod)
 	if paymentMethod == "" {
@@ -100,6 +107,25 @@ func (s *orderService) Checkout(userID string, req request.CheckoutRequest) (*mo
 	packingType := req.PackingType
 	if packingType == "" {
 		packingType = "standard"
+	}
+	packingCost, err := packingCostForType(packingType)
+	if err != nil {
+		return nil, "", err
+	}
+
+	shippingCost, err := s.calculateShippingCost(req.DestinationCityID, req.CourierCode, req.CourierService, totalWeightGram)
+	if err != nil {
+		return nil, "", err
+	}
+
+	insuranceCost := 0.0
+	if req.ShippingInsurance {
+		insuranceCost = math.Ceil(subtotal * 0.005)
+	}
+
+	total := subtotal + shippingCost + insuranceCost + packingCost - discount
+	if total < 0 {
+		return nil, "", errors.New("invalid order total")
 	}
 
 	parsedUserID, _ := uuid.Parse(userID)
@@ -115,11 +141,11 @@ func (s *orderService) Checkout(userID string, req request.CheckoutRequest) (*mo
 		ShippingPostalCode: req.ShippingPostalCode,
 		CourierCode:        req.CourierCode,
 		CourierService:     req.CourierService,
-		ShippingCost:       req.ShippingCost,
+		ShippingCost:       shippingCost,
 		ShippingInsurance:  req.ShippingInsurance,
-		InsuranceCost:      req.InsuranceCost,
+		InsuranceCost:      insuranceCost,
 		PackingType:        packingType,
-		PackingCost:        req.PackingCost,
+		PackingCost:        packingCost,
 		LivePlantNote:      req.LivePlantNote,
 		Subtotal:           subtotal,
 		Discount:           discount,
@@ -188,6 +214,104 @@ func (s *orderService) Checkout(userID string, req request.CheckoutRequest) (*mo
 	}
 
 	return order, snapResp.RedirectURL, nil
+}
+
+func packingCostForType(packingType string) (float64, error) {
+	switch strings.ToLower(strings.TrimSpace(packingType)) {
+	case "", "standard":
+		return 0, nil
+	case "premium":
+		return 15000, nil
+	default:
+		return 0, errors.New("invalid packing type")
+	}
+}
+
+func (s *orderService) calculateShippingCost(destinationCityID, courierCode, courierService string, totalWeightGram int) (float64, error) {
+	destinationCityID = strings.TrimSpace(destinationCityID)
+	courierCode = strings.ToLower(strings.TrimSpace(courierCode))
+	courierService = strings.ToUpper(strings.TrimSpace(courierService))
+	if destinationCityID == "" || courierCode == "" || courierService == "" {
+		return 0, errors.New("shipping destination and courier are required")
+	}
+
+	resp, err := rajaongkir.GetCost(rajaongkir.CostPayload{
+		Destination: destinationCityID,
+		Weight:      totalWeightGram,
+		Courier:     courierCode,
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	cost, ok := findRajaOngkirServiceCost(resp, courierService)
+	if !ok {
+		return 0, errors.New("selected courier service not available")
+	}
+	if cost < 0 {
+		return 0, errors.New("invalid shipping cost")
+	}
+	return cost, nil
+}
+
+func findRajaOngkirServiceCost(payload interface{}, service string) (float64, bool) {
+	root, ok := payload.(map[string]interface{})
+	if !ok {
+		return 0, false
+	}
+	raja, ok := root["rajaongkir"].(map[string]interface{})
+	if !ok {
+		return 0, false
+	}
+	results, ok := raja["results"].([]interface{})
+	if !ok || len(results) == 0 {
+		return 0, false
+	}
+	first, ok := results[0].(map[string]interface{})
+	if !ok {
+		return 0, false
+	}
+	costs, ok := first["costs"].([]interface{})
+	if !ok {
+		return 0, false
+	}
+	for _, rawCost := range costs {
+		costItem, ok := rawCost.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		svc, _ := costItem["service"].(string)
+		if strings.ToUpper(strings.TrimSpace(svc)) != service {
+			continue
+		}
+		costArr, ok := costItem["cost"].([]interface{})
+		if !ok || len(costArr) == 0 {
+			continue
+		}
+		cost0, ok := costArr[0].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		value, ok := cost0["value"]
+		if !ok {
+			continue
+		}
+		switch v := value.(type) {
+		case float64:
+			return v, true
+		case int:
+			return float64(v), true
+		case int64:
+			return float64(v), true
+		case string:
+			// RajaOngkir biasanya number, tapi fallback/parsing bisa berubah.
+			parsed, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+			if err == nil {
+				return parsed, true
+			}
+		}
+	}
+	return 0, false
 }
 
 func normalizeIDSet(ids []string) map[string]struct{} {
@@ -483,6 +607,16 @@ func (s *orderService) HandleMidtransWebhook(payload map[string]interface{}) err
 		order, err := s.orderRepo.GetOrderByID(orderID)
 		if err != nil {
 			return err
+		}
+		if grossAmount == "" {
+			return errors.New("invalid gross_amount in webhook")
+		}
+		paidAmount, err := strconv.ParseFloat(strings.TrimSpace(grossAmount), 64)
+		if err != nil {
+			return errors.New("invalid gross_amount format")
+		}
+		if math.Abs(paidAmount-order.Total) > 0.01 {
+			return errors.New("payment amount mismatch")
 		}
 
 		// In a real app we'd fetch the payment row, here we just construct one for the TX

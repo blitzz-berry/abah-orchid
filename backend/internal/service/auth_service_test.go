@@ -110,13 +110,25 @@ func (r *fakeUserRepo) RevokeRefreshToken(token string) error {
 	return nil
 }
 
+func (r *fakeUserRepo) RevokeRefreshTokensForUser(userID string) error {
+	for _, token := range r.refreshTokens {
+		if token != nil && token.UserID.String() == userID {
+			token.IsRevoked = true
+		}
+	}
+	return nil
+}
+
 func TestAuthServiceRegisterHashesPasswordAndRejectsDuplicateEmail(t *testing.T) {
 	repo := newFakeUserRepo()
 	svc := NewAuthService(repo)
 
-	user, err := svc.Register("buyer@example.com", "secret123", "Buyer", "081234")
+	user, err := svc.Register(" Buyer@Example.COM ", "secret123", "Buyer", "081234")
 	if err != nil {
 		t.Fatalf("Register() error = %v", err)
+	}
+	if user.Email != "buyer@example.com" {
+		t.Fatalf("Register() stored email = %q, want normalized lowercase email", user.Email)
 	}
 	if user.PasswordHash == "secret123" {
 		t.Fatal("Register() stored plaintext password")
@@ -207,5 +219,69 @@ func TestAuthServiceResetPasswordUsesTokenOnce(t *testing.T) {
 
 	if err := svc.ResetPassword("reset-token", "another-secret123"); err == nil {
 		t.Fatal("ResetPassword() accepted an already used reset token")
+	}
+}
+
+func TestAuthServiceResetPasswordRejectsExpiredToken(t *testing.T) {
+	repo := newFakeUserRepo()
+	user := &model.User{ID: uuid.New(), Email: "buyer@example.com", IsActive: true}
+	repo.usersByID[user.ID.String()] = user
+	repo.passwordReset = &model.PasswordReset{
+		UserID:    user.ID,
+		Token:     "expired-reset-token",
+		ExpiresAt: time.Now().Add(-time.Minute),
+	}
+
+	svc := NewAuthService(repo)
+	if err := svc.ResetPassword("expired-reset-token", "new-secret123"); err == nil {
+		t.Fatal("ResetPassword() accepted an expired reset token")
+	}
+	if repo.passwordReset.IsUsed {
+		t.Fatal("ResetPassword() marked an expired token as used")
+	}
+	if user.PasswordHash != "" {
+		t.Fatal("ResetPassword() changed password for an expired token")
+	}
+}
+
+func TestAuthServiceRequestPasswordResetReturnsDevURLWhenMailerIsNotConfigured(t *testing.T) {
+	t.Setenv("APP_ENV", "")
+	t.Setenv("FRONTEND_URL", "http://localhost:3000")
+	t.Setenv("SMTP_HOST", "")
+	t.Setenv("SMTP_PORT", "")
+	t.Setenv("SMTP_USERNAME", "")
+	t.Setenv("SMTP_PASSWORD", "")
+	t.Setenv("SMTP_FROM", "")
+
+	repo := newFakeUserRepo()
+	user := &model.User{
+		ID:       uuid.New(),
+		Email:    "buyer@example.com",
+		FullName: "Buyer",
+		IsActive: true,
+	}
+	repo.usersByID[user.ID.String()] = user
+	repo.usersByEmail[user.Email] = user
+
+	svc := NewAuthService(repo)
+	result, err := svc.RequestPasswordReset(" Buyer@Example.COM ")
+	if err != nil {
+		t.Fatalf("RequestPasswordReset() error = %v", err)
+	}
+	if result == nil || result.ResetURL == "" {
+		t.Fatal("RequestPasswordReset() did not return dev reset URL")
+	}
+	if result.EmailSent {
+		t.Fatal("RequestPasswordReset() reported email sent without configured SMTP")
+	}
+	if repo.passwordReset == nil {
+		t.Fatal("RequestPasswordReset() did not persist reset token")
+	}
+	timeUntilExpiry := time.Until(repo.passwordReset.ExpiresAt)
+	if timeUntilExpiry <= 29*time.Minute || timeUntilExpiry > passwordResetTTL {
+		t.Fatalf("RequestPasswordReset() expiry = %v, want about %v", timeUntilExpiry, passwordResetTTL)
+	}
+	if want := "http://localhost:3000/reset-password?token=" + repo.passwordReset.Token; result.ResetURL != want {
+		t.Fatalf("RequestPasswordReset() reset URL = %q, want %q", result.ResetURL, want)
 	}
 }

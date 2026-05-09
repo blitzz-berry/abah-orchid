@@ -1,13 +1,16 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"orchidmart-backend/internal/config"
 	"orchidmart-backend/internal/model"
+	"orchidmart-backend/internal/pkg/googleauth"
 	mailerPkg "orchidmart-backend/internal/pkg/mailer"
 	"orchidmart-backend/internal/repository"
 
@@ -19,6 +22,7 @@ import (
 type AuthService interface {
 	Register(email, password, fullName, phone string) (*model.User, error)
 	Login(email, password string) (*model.User, string, string, error)
+	LoginWithGoogle(idToken string) (*model.User, string, string, error)
 	Refresh(refreshToken string) (*model.User, string, string, error)
 	Logout(refreshToken string) error
 	GetUserByID(userID string) (*model.User, error)
@@ -28,9 +32,16 @@ type AuthService interface {
 	UpdateAddress(userID, addressID string, address *model.Address) (*model.Address, error)
 	DeleteAddress(userID, addressID string) error
 	SetDefaultAddress(userID, addressID string) error
-	RequestPasswordReset(email string) error
+	RequestPasswordReset(email string) (*PasswordResetRequestResult, error)
 	ResetPassword(token, password string) error
 }
+
+type PasswordResetRequestResult struct {
+	ResetURL  string
+	EmailSent bool
+}
+
+const passwordResetTTL = 30 * time.Minute
 
 type authService struct {
 	userRepo repository.UserRepository
@@ -41,6 +52,7 @@ func NewAuthService(userRepo repository.UserRepository) AuthService {
 }
 
 func (s *authService) Register(email, password, fullName, phone string) (*model.User, error) {
+	email = normalizeEmail(email)
 	existingUser, _ := s.userRepo.FindByEmail(email)
 	if existingUser != nil {
 		return nil, errors.New("email already in use")
@@ -67,6 +79,7 @@ func (s *authService) Register(email, password, fullName, phone string) (*model.
 }
 
 func (s *authService) Login(email, password string) (*model.User, string, string, error) {
+	email = normalizeEmail(email)
 	user, err := s.userRepo.FindByEmail(email)
 	if err != nil || user == nil {
 		return nil, "", "", errors.New("invalid email or password")
@@ -92,6 +105,59 @@ func (s *authService) Login(email, password string) (*model.User, string, string
 		return nil, "", "", err
 	}
 
+	return user, acToken, rfToken, nil
+}
+
+func (s *authService) LoginWithGoogle(idToken string) (*model.User, string, string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	claims, err := googleauth.VerifyIDToken(ctx, idToken, os.Getenv("GOOGLE_CLIENT_ID"))
+	if err != nil {
+		return nil, "", "", err
+	}
+
+	email := normalizeEmail(claims.Email)
+	user, err := s.userRepo.FindByEmail(email)
+	if err != nil {
+		return nil, "", "", err
+	}
+	if user == nil {
+		passwordHash, err := bcrypt.GenerateFromPassword([]byte(uuid.NewString()+uuid.NewString()), 12)
+		if err != nil {
+			return nil, "", "", err
+		}
+		fullName := strings.TrimSpace(claims.Name)
+		if fullName == "" {
+			fullName = email
+		}
+		user = &model.User{
+			Email:        email,
+			PasswordHash: string(passwordHash),
+			FullName:     fullName,
+			Role:         "customer",
+			AvatarURL:    strings.TrimSpace(claims.Picture),
+			IsActive:     true,
+		}
+		if err := s.userRepo.CreateUser(user); err != nil {
+			return nil, "", "", err
+		}
+	}
+	if !user.IsActive {
+		return nil, "", "", errors.New("account is suspended")
+	}
+
+	acToken, rfToken, err := s.issueTokens(user)
+	if err != nil {
+		return nil, "", "", err
+	}
+	if err := s.userRepo.CreateRefreshToken(&model.RefreshToken{
+		UserID:    user.ID,
+		Token:     rfToken,
+		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
+	}); err != nil {
+		return nil, "", "", err
+	}
 	return user, acToken, rfToken, nil
 }
 
@@ -180,36 +246,41 @@ func (s *authService) SetDefaultAddress(userID, addressID string) error {
 	return s.userRepo.SetDefaultAddress(userID, addressID)
 }
 
-func (s *authService) RequestPasswordReset(email string) error {
+func (s *authService) RequestPasswordReset(email string) (*PasswordResetRequestResult, error) {
+	email = normalizeEmail(email)
 	user, err := s.userRepo.FindByEmail(email)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if user == nil {
-		return nil
+		return &PasswordResetRequestResult{}, nil
 	}
 
 	reset := &model.PasswordReset{
 		UserID:    user.ID,
 		Token:     uuid.NewString(),
-		ExpiresAt: time.Now().Add(30 * time.Minute),
+		ExpiresAt: time.Now().Add(passwordResetTTL),
 	}
 	if err := s.userRepo.CreatePasswordReset(reset); err != nil {
-		return err
+		return nil, err
 	}
 
 	resetURL := buildResetPasswordURL(reset.Token)
 	if err := mailerPkg.SendPasswordResetEmail(user.Email, user.FullName, resetURL); err != nil {
 		if errors.Is(err, mailerPkg.ErrMailerNotConfigured) {
 			if config.IsProduction() {
-				return err
+				return nil, err
 			}
-			return nil
+			return &PasswordResetRequestResult{ResetURL: resetURL}, nil
 		}
-		return err
+		return nil, err
 	}
 
-	return nil
+	result := &PasswordResetRequestResult{EmailSent: true}
+	if !config.IsProduction() {
+		result.ResetURL = resetURL
+	}
+	return result, nil
 }
 
 func (s *authService) ResetPassword(token, password string) error {
@@ -227,6 +298,11 @@ func (s *authService) ResetPassword(token, password string) error {
 	}
 
 	if err := s.userRepo.UpdatePassword(reset.UserID.String(), string(hashedPassword)); err != nil {
+		return err
+	}
+
+	// Revoke all existing refresh tokens so old sessions can't survive a password reset.
+	if err := s.userRepo.RevokeRefreshTokensForUser(reset.UserID.String()); err != nil {
 		return err
 	}
 
@@ -298,4 +374,8 @@ func buildResetPasswordURL(token string) string {
 	}
 
 	return fmt.Sprintf("%s/reset-password?token=%s", baseURL, token)
+}
+
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
 }

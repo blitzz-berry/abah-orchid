@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Leaf, Lock, Mail, User, Phone } from "lucide-react";
+import GoogleAuthButton from "@/components/auth/GoogleAuthButton";
 import api from "@/lib/api";
 import { motion } from "framer-motion";
 
@@ -42,11 +43,20 @@ export default function RegisterPage() {
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md glass rounded-3xl p-8">
         <div className="flex flex-col items-center mb-8">
           <Link href="/" className="p-3 bg-[var(--color-leaf-50)] dark:bg-[var(--color-leaf-900)]/30 text-[var(--color-leaf-600)] rounded-2xl mb-4"><Leaf className="w-8 h-8" /></Link>
-          <h1 className="text-2xl font-bold">Gabung OrchidMart</h1>
-          <p className="text-gray-500 text-sm">Mulai transaksi anggrek pertamamu</p>
+          <h1 className="text-2xl font-bold">Daftar OrchidMart</h1>
+          <p className="text-gray-500 text-sm">Mulai transaksi anggrek pertama Anda.</p>
         </div>
 
         {error && <div className="bg-red-50 dark:bg-red-500/10 text-red-600 p-3 rounded-xl mb-6 text-sm text-center font-medium border border-red-100 dark:border-red-800">{error}</div>}
+
+        <div className="mb-5">
+          <GoogleAuthButton mode="register" />
+          <div className="my-5 flex items-center gap-3 text-xs text-gray-400">
+            <div className="h-px flex-1 bg-gray-200 dark:bg-gray-800" />
+            <span>atau daftar dengan email</span>
+            <div className="h-px flex-1 bg-gray-200 dark:bg-gray-800" />
+          </div>
+        </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           {fields.map((f) => (
@@ -61,7 +71,7 @@ export default function RegisterPage() {
           <button type="submit" disabled={isLoading} className="w-full py-3 mt-2 bg-[var(--color-leaf-600)] text-white rounded-xl font-bold disabled:opacity-50 hover:scale-[1.02] transition-transform">{isLoading ? "Memproses..." : "Daftar"}</button>
         </form>
 
-        <p className="text-center mt-6 text-sm text-gray-500">Sudah punya akun? <Link href="/login" className="text-[var(--color-leaf-600)] font-bold hover:underline">Masuk</Link></p>
+        <p className="text-center mt-6 text-sm text-gray-500">Sudah memiliki akun? <Link href="/login" className="text-[var(--color-leaf-600)] font-bold hover:underline">Masuk</Link></p>
       </motion.div>
     </div>
   );

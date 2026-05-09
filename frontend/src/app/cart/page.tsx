@@ -61,7 +61,7 @@ export default function CartPage() {
   const handleUpdateQty = async (itemId: string, newQty: number) => {
     if (newQty < 1 || !cart) return;
     if (!itemId) {
-      alert("Item cart tidak valid.");
+      alert("Item keranjang tidak valid.");
       return;
     }
     try {
@@ -78,7 +78,7 @@ export default function CartPage() {
   const handleRemove = async (itemId: string) => {
     if (!cart) return;
     if (!itemId) {
-      alert("Item cart tidak valid.");
+      alert("Item keranjang tidak valid.");
       return;
     }
     try {
@@ -95,7 +95,7 @@ export default function CartPage() {
 
   const handleContinueCheckout = () => {
     if (selectedItemIds.length === 0) {
-      alert("Pilih minimal satu item untuk checkout.");
+      alert("Pilih minimal satu item untuk melanjutkan proses pembayaran.");
       return;
     }
     sessionStorage.setItem("checkout_cart_item_ids", JSON.stringify(selectedItemIds));
@@ -109,7 +109,7 @@ export default function CartPage() {
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-8">
           <div>
             <h1 className="text-3xl font-extrabold tracking-tight mb-2">Keranjang Belanja</h1>
-            <p className="text-sm text-gray-500">Semua barang yang lu masukin ke cart ada di sini. Pilih item yang mau checkout dalam satu transaksi.</p>
+            <p className="text-sm text-gray-500">Semua barang yang Anda masukkan ke keranjang tersedia di sini. Pilih item yang ingin diproses dalam satu transaksi.</p>
           </div>
           {cartItems.length > 0 && (
             <button onClick={toggleAll} className="self-start sm:self-auto px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-800 text-sm font-bold hover:bg-gray-50 dark:hover:bg-zinc-900">
@@ -124,7 +124,7 @@ export default function CartPage() {
           <div className="text-center py-20 glass rounded-3xl">
             <Leaf className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <h2 className="text-2xl font-bold mb-2">Keranjang Kosong</h2>
-            <p className="text-gray-500 mb-8">Yuk, cari varietas anggrek idamanmu dulu.</p>
+            <p className="text-gray-500 mb-8">Silakan temukan varietas anggrek pilihan Anda terlebih dahulu.</p>
             <Link href="/products" className="bg-black text-white dark:bg-white dark:text-black px-6 py-3 rounded-xl font-bold inline-flex items-center gap-2">Mulai Belanja <ArrowRight className="w-4 h-4" /></Link>
           </div>
         ) : (
@@ -162,7 +162,7 @@ export default function CartPage() {
               <div className="flex justify-between mb-3 text-sm text-gray-600 dark:text-gray-300"><span>Total qty</span><span>{totalQuantity}</span></div>
               <div className="flex justify-between mb-6 pb-6 border-b border-gray-200 dark:border-gray-800 font-extrabold text-lg"><span>Subtotal</span><span className="text-[var(--color-leaf-600)]">Rp {subtotal.toLocaleString("id-ID")}</span></div>
               <button onClick={handleContinueCheckout} disabled={selectedItemIds.length === 0} className="w-full bg-black text-white dark:bg-white dark:text-black py-4 rounded-xl flex items-center justify-center gap-2 font-bold hover:scale-[1.02] transition-transform disabled:opacity-50">
-                <ShoppingBag className="w-5 h-5" /> Checkout Item Dipilih
+                <ShoppingBag className="w-5 h-5" /> Lanjutkan Pembayaran
               </button>
             </aside>
           </div>
