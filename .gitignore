@@ -5,6 +5,7 @@ node_modules/
 .next/
 backend/.env
 .env.production
+.env.production.example
 .env.local
 uploads/
 prompt/
