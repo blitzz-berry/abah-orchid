@@ -99,6 +99,7 @@ JWT_SECRET=secret-panjang-random-minimal-32-karakter
 ADMIN_EMAIL=admin@domain-anda.com
 ADMIN_PASSWORD=password-admin-yang-kuat
 ADMIN_NAME=OrchidMart Admin
+ADMIN_EXCLUSIVE=false
 ```
 
 Wajib:
@@ -108,6 +109,7 @@ Wajib:
 - Jangan memakai password database default.
 - Jangan commit `.env.production`.
 - Jika secret pernah dibagikan di chat, screenshot, atau repository, lakukan rotasi sebelum go-live.
+- Jika hanya boleh ada satu admin sesuai `ADMIN_EMAIL`, set `ADMIN_EXCLUSIVE=true`. Saat backend restart, akun admin lain akan diturunkan ke `customer` dan refresh token lamanya direvoke.
 
 ## 4. Google Login
 
@@ -348,6 +350,7 @@ Sebelum go-live:
 
 - Ganti password admin.
 - Batasi siapa saja yang memiliki role `admin`.
+- Jika admin lama harus dicabut otomatis, aktifkan `ADMIN_EXCLUSIVE=true`.
 - Pertimbangkan `ADMIN_IP_ALLOWLIST`, VPN, atau Cloudflare Access.
 - Uji login admin.
 - Uji admin dapat mengelola produk, stok, gambar, pesanan, kupon, dan konfirmasi pembayaran.

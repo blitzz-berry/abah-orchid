@@ -30,10 +30,11 @@ const sidebarLinks = [
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, isAuthenticated, logout } = useAuthStore();
+  const { user, isAuthenticated, isHydrated, logout } = useAuthStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
+    if (!isHydrated) return;
     if (!isAuthenticated) {
       router.replace("/login");
       return
@@ -41,12 +42,20 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     if (user?.role !== "admin") {
       router.replace("/");
     }
-  }, [isAuthenticated, router, user]);
+  }, [isAuthenticated, isHydrated, router, user]);
 
   const isActive = (href: string) => {
     if (href === "/admin") return pathname === "/admin";
     return pathname.startsWith(href);
   };
+
+  if (!isHydrated) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-zinc-950">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-[var(--color-brand-500)]" />
+      </div>
+    );
+  }
 
   if (!isAuthenticated || user?.role !== "admin") {
     return null;

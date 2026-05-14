@@ -235,6 +235,7 @@ func ensureDefaultAdmin() {
 		}
 
 		log.Printf("Default admin created: %s", adminEmail)
+		enforceExclusiveAdmin(adminEmail)
 		return
 	}
 
@@ -269,6 +270,49 @@ func ensureDefaultAdmin() {
 			log.Fatalf("Failed to update default admin. \nError: %v", updateErr)
 		}
 	}
+
+	enforceExclusiveAdmin(adminEmail)
+}
+
+func enforceExclusiveAdmin(adminEmail string) {
+	if !strings.EqualFold(strings.TrimSpace(os.Getenv("ADMIN_EXCLUSIVE")), "true") {
+		return
+	}
+
+	adminEmail = strings.ToLower(strings.TrimSpace(adminEmail))
+	if adminEmail == "" {
+		return
+	}
+
+	var oldAdmins []model.User
+	if err := DB.Where("role = ? AND LOWER(email) <> ?", "admin", adminEmail).Find(&oldAdmins).Error; err != nil {
+		log.Fatalf("Failed to check old admin accounts. \nError: %v", err)
+	}
+	if len(oldAdmins) == 0 {
+		return
+	}
+
+	oldAdminIDs := make([]string, 0, len(oldAdmins))
+	for _, oldAdmin := range oldAdmins {
+		oldAdminIDs = append(oldAdminIDs, oldAdmin.ID.String())
+	}
+
+	if err := DB.Model(&model.User{}).
+		Where("id IN ?", oldAdminIDs).
+		Updates(map[string]any{
+			"role":          "customer",
+			"customer_type": "B2C",
+		}).Error; err != nil {
+		log.Fatalf("Failed to demote old admin accounts. \nError: %v", err)
+	}
+
+	if err := DB.Model(&model.RefreshToken{}).
+		Where("user_id IN ?", oldAdminIDs).
+		Update("is_revoked", true).Error; err != nil {
+		log.Fatalf("Failed to revoke old admin sessions. \nError: %v", err)
+	}
+
+	log.Printf("Demoted %d old admin account(s); ADMIN_EXCLUSIVE=true keeps %s as the only admin", len(oldAdmins), adminEmail)
 }
 
 func looksLikeBcryptHash(value string) bool {
