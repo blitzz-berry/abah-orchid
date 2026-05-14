@@ -102,6 +102,16 @@ export default function AdminDashboard() {
     { title: "Total Pelanggan", value: dashboard.kpi.customers.toLocaleString("id-ID"), icon: Users, color: "text-purple-600", bg: "bg-purple-50 dark:bg-purple-900/20", helper: `${customerSegments.b2b} B2B / ${customerSegments.b2c} B2C` },
     { title: "Average Order Value", value: `Rp ${Math.round(dashboard.kpi.aov).toLocaleString("id-ID")}`, icon: ShoppingBag, color: "text-amber-600", bg: "bg-amber-50 dark:bg-amber-900/20", helper: `${dashboard.kpi.low_stock} produk low stock` },
   ] : [];
+  const heightClass = (value: number, max: number) => {
+    if (max <= 0) return "h-[10px]";
+    const bucket = Math.max(Math.ceil((value / max) * 10), 1);
+    return ["h-[18px]", "h-[36px]", "h-[54px]", "h-[72px]", "h-[90px]", "h-[108px]", "h-[126px]", "h-[144px]", "h-[162px]", "h-[180px]"][bucket - 1] || "h-[10px]";
+  };
+  const widthClass = (value: number, total: number) => {
+    if (total <= 0) return "w-0";
+    const bucket = Math.max(Math.round((value / total) * 10), 0);
+    return ["w-0", "w-[10%]", "w-[20%]", "w-[30%]", "w-[40%]", "w-[50%]", "w-[60%]", "w-[70%]", "w-[80%]", "w-[90%]", "w-full"][bucket] || "w-0";
+  };
 
   return (
     <div className="p-6 md:p-8">
@@ -137,12 +147,11 @@ export default function AdminDashboard() {
               <CardContent>
                 <div className="grid grid-cols-7 gap-3 items-end min-h-[220px]">
                   {salesSeries.map((point) => {
-                    const height = maxRevenue > 0 ? Math.max((point.revenue / maxRevenue) * 180, 10) : 10;
                     return (
                       <div key={point.label} className="flex flex-col items-center gap-3">
                         <div className="text-[10px] text-muted-foreground font-medium text-center">Rp {Math.round(point.revenue / 1000).toLocaleString("id-ID")}k</div>
                         <div className="w-full flex justify-center">
-                          <div className="w-full max-w-[36px] rounded-t-md bg-[var(--color-brand-600)]" style={{ height }} />
+                          <div className={`w-full max-w-[36px] rounded-t-md bg-[var(--color-brand-600)] ${heightClass(point.revenue, maxRevenue)}`} />
                         </div>
                         <div className="text-[11px] font-semibold text-center">{point.label}</div>
                         <div className="text-[10px] text-muted-foreground">{point.orders} order</div>
@@ -210,7 +219,6 @@ export default function AdminDashboard() {
                   { label: "B2C", value: customerSegments.b2c, color: "bg-emerald-500" },
                 ].map((segment) => {
                   const total = customerSegments.b2b + customerSegments.b2c || 1;
-                  const percentage = (segment.value / total) * 100;
                   return (
                     <div key={segment.label}>
                       <div className="flex items-center justify-between mb-2">
@@ -218,7 +226,7 @@ export default function AdminDashboard() {
                         <span className="text-sm font-bold">{segment.value}</span>
                       </div>
                       <div className="h-3 rounded-full bg-muted overflow-hidden">
-                        <div className={`${segment.color} h-full rounded-full`} style={{ width: `${percentage}%` }} />
+                        <div className={`${segment.color} h-full rounded-full ${widthClass(segment.value, total)}`} />
                       </div>
                     </div>
                   );

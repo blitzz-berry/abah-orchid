@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"orchidmart-backend/internal/model"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -44,17 +45,42 @@ func (r *orderRepository) CreateOrderFromCartItemsWithTx(order *model.Order, car
 		for _, item := range order.Items {
 			result := tx.Model(&model.Inventory{}).
 				Where("product_id = ? AND quantity >= ?", item.ProductID, item.Quantity).
-				UpdateColumn("updated_at", time.Now())
+				UpdateColumns(map[string]interface{}{
+					"quantity":   gorm.Expr("quantity - ?", item.Quantity),
+					"updated_at": time.Now(),
+				})
 			if result.Error != nil {
 				return result.Error
 			}
 			if result.RowsAffected == 0 {
 				return fmt.Errorf("insufficient stock for %s", item.ProductName)
 			}
+			if err := tx.Create(&model.StockMovement{
+				ProductID:     item.ProductID,
+				MovementType:  "STOCK_OUT",
+				Quantity:      item.Quantity,
+				ReferenceType: "ORDER_RESERVE",
+				ReferenceID:   order.ID.String(),
+				Note:          "Stock reserved when order was created",
+			}).Error; err != nil {
+				return err
+			}
 		}
 
 		if err := tx.Create(order).Error; err != nil {
 			return err
+		}
+		if strings.TrimSpace(order.CouponCode) != "" {
+			update := tx.Model(&model.Coupon{}).
+				Where("LOWER(code) = LOWER(?) AND is_active = ? AND valid_from <= ? AND valid_until >= ?", order.CouponCode, true, time.Now(), time.Now())
+			update = update.Where("usage_limit = 0 OR used_count < usage_limit")
+			result := update.UpdateColumn("used_count", gorm.Expr("used_count + 1"))
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return errors.New("coupon usage limit reached")
+			}
 		}
 
 		history := model.OrderStatusHistory{
@@ -321,33 +347,6 @@ func (r *orderRepository) CompletePaymentWithTx(payment *model.Payment) error {
 			return err
 		}
 
-		for _, item := range order.Items {
-			result := tx.Model(&model.Inventory{}).
-				Where("product_id = ? AND quantity >= ?", item.ProductID, item.Quantity).
-				UpdateColumns(map[string]interface{}{
-					"quantity":   gorm.Expr("quantity - ?", item.Quantity),
-					"updated_at": time.Now(),
-				})
-			if result.Error != nil {
-				return result.Error
-			}
-			if result.RowsAffected == 0 {
-				return fmt.Errorf("insufficient stock for %s", item.ProductName)
-			}
-
-			sm := model.StockMovement{
-				ProductID:     item.ProductID,
-				MovementType:  "STOCK_OUT",
-				Quantity:      item.Quantity,
-				ReferenceType: "ORDER",
-				ReferenceID:   payment.OrderID.String(),
-				Note:          "Automatic stock reduction after payment",
-			}
-			if err := tx.Create(&sm).Error; err != nil {
-				return err
-			}
-		}
-
 		return tx.Create(&model.OrderStatusHistory{
 			OrderID:    order.ID,
 			FromStatus: order.Status,
@@ -369,7 +368,13 @@ func (r *orderRepository) CancelOrderWithTx(orderID, reason string) error {
 		if order.Status == "CANCELLED" {
 			return nil
 		}
-		shouldRestore := order.Status == "PAID" || order.Status == "PROCESSING"
+		shouldRestore, err := hasStockOutForOrder(tx, order.ID.String())
+		if err != nil {
+			return err
+		}
+		if order.Status == "SHIPPED" || order.Status == "DELIVERED" || order.Status == "COMPLETED" || order.Status == "REFUNDED" {
+			shouldRestore = false
+		}
 
 		now := time.Now()
 		if err := tx.Model(&model.Order{}).Where("id = ?", orderID).Updates(map[string]interface{}{
@@ -489,22 +494,28 @@ func (r *orderRepository) RefundOrder(orderID, reason string, amount float64) er
 		}).Error; err != nil {
 			return err
 		}
-		for _, item := range order.Items {
-			if err := tx.Model(&model.Inventory{}).Where("product_id = ?", item.ProductID).UpdateColumns(map[string]interface{}{
-				"quantity":   gorm.Expr("quantity + ?", item.Quantity),
-				"updated_at": time.Now(),
-			}).Error; err != nil {
-				return err
-			}
-			if err := tx.Create(&model.StockMovement{
-				ProductID:     item.ProductID,
-				MovementType:  "STOCK_IN",
-				Quantity:      item.Quantity,
-				ReferenceType: "REFUND",
-				ReferenceID:   order.ID.String(),
-				Note:          "Automatic stock restore after refund",
-			}).Error; err != nil {
-				return err
+		shouldRestore, err := hasStockOutForOrder(tx, order.ID.String())
+		if err != nil {
+			return err
+		}
+		if shouldRestore {
+			for _, item := range order.Items {
+				if err := tx.Model(&model.Inventory{}).Where("product_id = ?", item.ProductID).UpdateColumns(map[string]interface{}{
+					"quantity":   gorm.Expr("quantity + ?", item.Quantity),
+					"updated_at": time.Now(),
+				}).Error; err != nil {
+					return err
+				}
+				if err := tx.Create(&model.StockMovement{
+					ProductID:     item.ProductID,
+					MovementType:  "STOCK_IN",
+					Quantity:      item.Quantity,
+					ReferenceType: "REFUND",
+					ReferenceID:   order.ID.String(),
+					Note:          "Automatic stock restore after refund",
+				}).Error; err != nil {
+					return err
+				}
 			}
 		}
 		return tx.Create(&model.OrderStatusHistory{
@@ -514,6 +525,24 @@ func (r *orderRepository) RefundOrder(orderID, reason string, amount float64) er
 			Note:       reason,
 		}).Error
 	})
+}
+
+func hasStockOutForOrder(tx *gorm.DB, orderID string) (bool, error) {
+	var stockOut int64
+	err := tx.Model(&model.StockMovement{}).
+		Where("reference_id = ? AND movement_type = ?", orderID, "STOCK_OUT").
+		Count(&stockOut).Error
+	if err != nil {
+		return false, err
+	}
+	var stockIn int64
+	err = tx.Model(&model.StockMovement{}).
+		Where("reference_id = ? AND movement_type = ? AND reference_type IN ?", orderID, "STOCK_IN", []string{"ORDER_CANCEL", "REFUND"}).
+		Count(&stockIn).Error
+	if err != nil {
+		return false, err
+	}
+	return stockOut > stockIn, nil
 }
 
 func coalesceTime(existing *time.Time, fallback time.Time) *time.Time {

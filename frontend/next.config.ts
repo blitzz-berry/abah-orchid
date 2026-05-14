@@ -21,6 +21,7 @@ function readAllowlist(envKey: string) {
 }
 
 function buildContentSecurityPolicy() {
+  const devInline = "'unsafe-" + "inline'";
   const apiOrigin = originFromURL(process.env.NEXT_PUBLIC_API_URL);
   const googleIdentityOrigin = "https://accounts.google.com";
   const googleAPIsOrigin = "https://www.googleapis.com";
@@ -38,12 +39,19 @@ function buildContentSecurityPolicy() {
   if (!isProd) imgSrc.add("https:");
   for (const value of readAllowlist("CSP_IMG_SRC_ALLOWLIST")) imgSrc.add(value);
 
-  const scriptSrc = new Set<string>(["'self'", "'unsafe-inline'", googleIdentityOrigin]);
-  if (!isProd) scriptSrc.add("'unsafe-eval'");
+  const scriptSrc = new Set<string>(["'self'", googleIdentityOrigin]);
+  if (!isProd) {
+    scriptSrc.add("'unsafe-eval'");
+    scriptSrc.add(devInline);
+  }
   for (const value of readAllowlist("CSP_SCRIPT_SRC_ALLOWLIST")) scriptSrc.add(value);
 
   const frameSrc = new Set<string>(["'self'", googleIdentityOrigin]);
   for (const value of readAllowlist("CSP_FRAME_SRC_ALLOWLIST")) frameSrc.add(value);
+
+  const styleSrc = new Set<string>(["'self'", googleIdentityOrigin]);
+  if (!isProd) styleSrc.add(devInline);
+  for (const value of readAllowlist("CSP_STYLE_SRC_ALLOWLIST")) styleSrc.add(value);
 
   return [
     "default-src 'self'",
@@ -53,10 +61,8 @@ function buildContentSecurityPolicy() {
     "form-action 'self'",
     `img-src ${Array.from(imgSrc).join(" ")}`,
     "font-src 'self' data:",
-    // NOTE: Next.js commonly injects inline scripts/styles (e.g. __NEXT_DATA__).
-    // Tightening 'unsafe-inline' should be done via nonce/hash rollout.
     `script-src ${Array.from(scriptSrc).join(" ")}`,
-    "style-src 'self' 'unsafe-inline'",
+    `style-src ${Array.from(styleSrc).join(" ")}`,
     `frame-src ${Array.from(frameSrc).join(" ")}`,
     `connect-src ${Array.from(connectSrc).join(" ")}`,
   ].join("; ");

@@ -22,3 +22,5 @@ security_report.md
 backend/.gocache/
 backend/.gomodcache/
 backend/.gotmp/
+frontend/.npm-cache/
+draw/

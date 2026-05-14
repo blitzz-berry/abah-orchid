@@ -3,6 +3,7 @@ import type { InternalAxiosRequestConfig } from 'axios';
 
 type RetriableRequestConfig = InternalAxiosRequestConfig & {
   _retry?: boolean;
+  _stepUpRetry?: boolean;
 };
 
 let accessToken: string | null = null;
@@ -38,6 +39,11 @@ api.interceptors.request.use((config) => {
   if (accessToken) {
     config.headers.Authorization = `Bearer ${accessToken}`;
   }
+  const method = (config.method || 'get').toLowerCase();
+  const isAdminMutation = /^\/?admin(?:\/|$)/.test(config.url || '') && ['post', 'put', 'patch', 'delete'].includes(method);
+  if (isAdminMutation) {
+    config.headers['X-Admin-Step-Up'] = 'confirm';
+  }
   if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
     if (typeof config.headers.delete === 'function') {
       config.headers.delete('Content-Type');
@@ -53,14 +59,23 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config as RetriableRequestConfig | undefined;
+    const needsFreshAdminToken =
+      error.response?.status === 403 &&
+      error.response?.data?.code === 'admin_step_up_required' &&
+      originalRequest &&
+      !originalRequest._stepUpRetry &&
+      originalRequest.url !== '/auth/refresh' &&
+      typeof window !== 'undefined';
+
     if (
-      error.response?.status === 401 &&
+      (error.response?.status === 401 || needsFreshAdminToken) &&
       originalRequest &&
       !originalRequest._retry &&
       originalRequest.url !== '/auth/refresh' &&
       typeof window !== 'undefined'
     ) {
       originalRequest._retry = true;
+      if (needsFreshAdminToken) originalRequest._stepUpRetry = true;
       try {
         const response = await api.post('/auth/refresh');
         const data = response.data.data || response.data;

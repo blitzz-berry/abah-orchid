@@ -71,6 +71,6 @@ func (h *ShippingHandler) LivePlantOptions(c *gin.Context) {
 		},
 		"insurance":            gin.H{"available": true, "recommended": true},
 		"disclaimer":           "Live plant shipping requires unboxing video evidence for damage claims. Fast service is recommended for long-distance delivery.",
-		"recommended_services": []string{"YES", "REG", "SDS", "Next Day"},
+		"recommended_services": []string{"YES", "REG", "EZ", "BEST", "NEXT", "Express Next Day"},
 	}})
 }

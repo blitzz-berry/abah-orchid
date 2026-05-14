@@ -46,7 +46,7 @@ func main() {
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     allowedOrigins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Admin-Step-Up"},
 		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,
 	}))
@@ -74,6 +74,7 @@ func main() {
 
 	shippingHandler := handler.NewShippingHandler()
 	notificationHandler := handler.NewNotificationHandler(config.DB)
+	adminHandler := handler.NewAdminHandler(config.DB, orderSvc)
 	if os.Getenv("PAYMENT_EXPIRY_WORKER") == "true" {
 		go func() {
 			ticker := time.NewTicker(15 * time.Minute)
@@ -129,11 +130,11 @@ func main() {
 			productRoutes.POST("/:id/reviews", middleware.AuthMiddleware(), reviewHandler.Create)
 			productRoutes.GET("/:id", productHandler.GetProductByID)
 
-			adminProductRoutes := productRoutes.Group("", middleware.AuthMiddleware(), middleware.AdminMiddleware())
-			adminProductRoutes.POST("", productHandler.CreateProduct)
-			adminProductRoutes.PUT("/:id", productHandler.UpdateProduct)
-			adminProductRoutes.DELETE("/:id", productHandler.DeleteProduct)
-			adminProductRoutes.POST("/:id/adjust-stock", productHandler.AdjustStock)
+			adminProductRoutes := productRoutes.Group("", middleware.AuthMiddleware(), middleware.AdminMiddleware(), middleware.AdminIPAllowlist())
+			adminProductRoutes.POST("", middleware.RequireAdminStepUp("create_product"), productHandler.CreateProduct)
+			adminProductRoutes.PUT("/:id", middleware.RequireAdminStepUp("update_product"), productHandler.UpdateProduct)
+			adminProductRoutes.DELETE("/:id", middleware.RequireAdminStepUp("delete_product"), productHandler.DeleteProduct)
+			adminProductRoutes.POST("/:id/adjust-stock", middleware.RequireAdminStepUp("adjust_product_stock"), productHandler.AdjustStock)
 		}
 
 		// ... (keep existing shipping and webhooks)
@@ -168,7 +169,7 @@ func main() {
 
 		paymentWebhookRoutes := api.Group("/payments")
 		{
-			paymentWebhookRoutes.POST("/webhook/midtrans", orderHandler.WebhookMidtrans)
+			paymentWebhookRoutes.POST("/webhook/midtrans", middleware.RateLimit(60, time.Minute), orderHandler.WebhookMidtrans)
 		}
 
 		// Protected Routes (requires JWT token)
@@ -194,11 +195,11 @@ func main() {
 
 		paymentRoutes := api.Group("/payments", middleware.AuthMiddleware())
 		{
-			paymentRoutes.POST("/:order_id/pay", orderHandler.InitiatePayment)
+			paymentRoutes.POST("/:order_id/pay", middleware.RateLimit(10, 15*time.Minute), orderHandler.InitiatePayment)
 			paymentRoutes.GET("/:order_id/status", orderHandler.GetPaymentStatus)
 			paymentRoutes.GET("/:order_id/proof-file/:filename", uploadHandler.DownloadPaymentProof)
-			paymentRoutes.POST("/:order_id/upload-proof", orderHandler.UploadPaymentProof)
-			paymentRoutes.POST("/:order_id/upload-proof-file", middleware.BodyLimit(storage.MaxPaymentProofSize+(1<<20)), uploadHandler.UploadPaymentProof)
+			paymentRoutes.POST("/:order_id/upload-proof", middleware.RateLimit(10, 15*time.Minute), orderHandler.UploadPaymentProof)
+			paymentRoutes.POST("/:order_id/upload-proof-file", middleware.RateLimit(10, 15*time.Minute), middleware.BodyLimit(storage.MaxPaymentProofSize+(1<<20)), uploadHandler.UploadPaymentProof)
 		}
 
 		notificationRoutes := api.Group("/notifications", middleware.AuthMiddleware())
@@ -208,8 +209,12 @@ func main() {
 			notificationRoutes.PATCH("/read-all", notificationHandler.MarkAllRead)
 		}
 
-		adminHandler := handler.NewAdminHandler(config.DB, orderSvc)
-		adminRoutes := api.Group("/admin", middleware.AuthMiddleware(), middleware.AdminMiddleware())
+		couponRoutes := api.Group("/coupons", middleware.AuthMiddleware())
+		{
+			couponRoutes.POST("/preview", adminHandler.PreviewCoupon)
+		}
+
+		adminRoutes := api.Group("/admin", middleware.AuthMiddleware(), middleware.AdminMiddleware(), middleware.AdminIPAllowlist(), middleware.RateLimit(300, time.Minute))
 		{
 			adminRoutes.GET("/kpi", adminHandler.GetKPI)
 			adminRoutes.GET("/analytics/overview", adminHandler.GetAnalyticsOverview)
@@ -222,32 +227,37 @@ func main() {
 			adminRoutes.GET("/analytics/trends", adminHandler.GetTrendAnalytics)
 			adminRoutes.GET("/products", productHandler.GetAllProducts)
 			adminRoutes.GET("/products/:id", productHandler.GetProductByID)
-			adminRoutes.POST("/products", productHandler.CreateProduct)
-			adminRoutes.PUT("/products/:id", productHandler.UpdateProduct)
-			adminRoutes.DELETE("/products/:id", productHandler.DeleteProduct)
-			adminRoutes.POST("/products/:id/adjust-stock", productHandler.AdjustStock)
-			adminRoutes.POST("/products/:id/images", adminHandler.AddProductImage)
-			adminRoutes.POST("/products/:id/images/upload", middleware.BodyLimit(storage.MaxImageSize+(1<<20)), uploadHandler.UploadProductImage)
-			adminRoutes.PUT("/products/:id/images/:image_id/primary", adminHandler.SetPrimaryProductImage)
-			adminRoutes.DELETE("/products/:id/images/:image_id", adminHandler.DeleteProductImage)
+			adminRoutes.POST("/products", middleware.RequireAdminStepUp("create_product"), productHandler.CreateProduct)
+			adminRoutes.PUT("/products/:id", middleware.RequireAdminStepUp("update_product"), productHandler.UpdateProduct)
+			adminRoutes.DELETE("/products/:id", middleware.RequireAdminStepUp("delete_product"), productHandler.DeleteProduct)
+			adminRoutes.POST("/products/:id/adjust-stock", middleware.RequireAdminStepUp("adjust_product_stock"), productHandler.AdjustStock)
+			adminRoutes.POST("/products/:id/images", middleware.RequireAdminStepUp("add_product_image"), adminHandler.AddProductImage)
+			adminRoutes.POST("/products/:id/images/upload", middleware.RequireAdminStepUp("upload_product_image"), middleware.BodyLimit(storage.MaxImageSize+(1<<20)), uploadHandler.UploadProductImage)
+			adminRoutes.PUT("/products/:id/images/:image_id/primary", middleware.RequireAdminStepUp("set_primary_product_image"), adminHandler.SetPrimaryProductImage)
+			adminRoutes.DELETE("/products/:id/images/:image_id", middleware.RequireAdminStepUp("delete_product_image"), adminHandler.DeleteProductImage)
 			adminRoutes.GET("/categories", productHandler.GetAllCategories)
-			adminRoutes.POST("/categories", adminHandler.CreateCategory)
-			adminRoutes.PUT("/categories/:id", adminHandler.UpdateCategory)
-			adminRoutes.DELETE("/categories/:id", adminHandler.DeleteCategory)
+			adminRoutes.POST("/categories", middleware.RequireAdminStepUp("create_category"), adminHandler.CreateCategory)
+			adminRoutes.PUT("/categories/:id", middleware.RequireAdminStepUp("update_category"), adminHandler.UpdateCategory)
+			adminRoutes.DELETE("/categories/:id", middleware.RequireAdminStepUp("delete_category"), adminHandler.DeleteCategory)
 			adminRoutes.GET("/orders", adminHandler.GetOrders)
 			adminRoutes.GET("/orders/:id", adminHandler.GetOrderByID)
-			adminRoutes.PUT("/orders/:id/status", adminHandler.UpdateOrderStatus)
-			adminRoutes.PUT("/orders/:id/tracking", adminHandler.UpdateOrderTracking)
-			adminRoutes.POST("/orders/:id/confirm-payment", adminHandler.ConfirmPayment)
-			adminRoutes.POST("/orders/:id/refund", adminHandler.RefundOrder)
+			adminRoutes.PUT("/orders/:id/status", middleware.RequireAdminStepUp("update_order_status"), adminHandler.UpdateOrderStatus)
+			adminRoutes.PUT("/orders/:id/tracking", middleware.RequireAdminStepUp("update_order_tracking"), adminHandler.UpdateOrderTracking)
+			adminRoutes.POST("/orders/:id/confirm-payment", middleware.RequireAdminStepUp("confirm_payment"), adminHandler.ConfirmPayment)
+			adminRoutes.POST("/orders/:id/refund", middleware.RequireAdminStepUp("refund_order"), adminHandler.RefundOrder)
 			adminRoutes.GET("/orders/:id/invoice", adminHandler.PrintInvoice)
-			adminRoutes.POST("/payments/expire", adminHandler.ExpirePayments)
+			adminRoutes.POST("/payments/expire", middleware.RequireAdminStepUp("expire_payments"), adminHandler.ExpirePayments)
 			adminRoutes.GET("/customers", adminHandler.GetCustomers)
 			adminRoutes.GET("/customers/:id", adminHandler.GetCustomerByID)
 			adminRoutes.GET("/inventory", adminHandler.GetInventory)
 			adminRoutes.GET("/inventory/low-stock", adminHandler.GetLowStockInventory)
 			adminRoutes.GET("/inventory/movements", adminHandler.GetMovements) // UPDATED
-			adminRoutes.PUT("/inventory/:product_id", adminHandler.UpdateInventory)
+			adminRoutes.PUT("/inventory/:product_id", middleware.RequireAdminStepUp("update_inventory"), adminHandler.UpdateInventory)
+			adminRoutes.GET("/coupons", adminHandler.GetCoupons)
+			adminRoutes.POST("/coupons", middleware.RequireAdminStepUp("create_coupon"), adminHandler.CreateCoupon)
+			adminRoutes.PUT("/coupons/:id", middleware.RequireAdminStepUp("update_coupon"), adminHandler.UpdateCoupon)
+			adminRoutes.DELETE("/coupons/:id", middleware.RequireAdminStepUp("delete_coupon"), adminHandler.DeleteCoupon)
+			adminRoutes.POST("/coupons/preview", adminHandler.PreviewCoupon)
 		}
 
 		wishlistRoutes := api.Group("/wishlist", middleware.AuthMiddleware())

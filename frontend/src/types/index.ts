@@ -202,6 +202,22 @@ export interface Notification {
   created_at?: string;
 }
 
+export interface Coupon {
+  id: string;
+  code: string;
+  description?: string;
+  discount_type: 'percentage' | 'fixed';
+  discount_value: number;
+  min_purchase: number;
+  max_discount: number;
+  usage_limit: number;
+  used_count: number;
+  valid_from: string;
+  valid_until: string;
+  is_active: boolean;
+  created_at?: string;
+}
+
 // =============================================
 // Stock Movement Types
 // =============================================

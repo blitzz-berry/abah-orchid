@@ -76,6 +76,14 @@ const paymentMethods = [
   { value: "midtrans_card", title: "Kartu Kredit/Debit", description: "Kartu Visa/Mastercard via Midtrans Snap." },
 ];
 
+const courierOptions = [
+  { value: "jne", label: "JNE" },
+  { value: "jnt", label: "J&T" },
+  { value: "sicepat", label: "SiCepat" },
+  { value: "anteraja", label: "AnterAja" },
+  { value: "pos", label: "POS" },
+];
+
 const readRajaResults = <T,>(payload: unknown): T[] => {
   const data = payload as { rajaongkir?: { results?: T[] }; data?: T[] };
   if (Array.isArray(data.rajaongkir?.results)) return data.rajaongkir.results;
@@ -389,7 +397,7 @@ export default function CheckoutPage() {
                   <div><label className="text-sm font-medium mb-1 block">Provinsi</label><select value={formData.province_id} onChange={(e) => { setField("province_id", e.target.value); setField("city_id", ""); setField("shipping_cost", 0); setField("courier_service", ""); setShippingCosts([]); }} className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm"><option value="">Pilih Provinsi</option>{provinces.map((province) => <option key={province.province_id} value={province.province_id}>{province.province}</option>)}</select></div>
                   <div><label className="text-sm font-medium mb-1 block">Kota/Kabupaten</label><select value={formData.city_id} onChange={(e) => { setField("city_id", e.target.value); setField("shipping_cost", 0); setField("courier_service", ""); }} disabled={!formData.province_id} className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm disabled:opacity-50"><option value="">Pilih Kota</option>{cities.map((city) => <option key={city.city_id} value={city.city_id}>{city.type} {city.city_name}</option>)}</select></div>
                   <div className="md:col-span-2"><label className="text-sm font-medium mb-1 block">Ekspedisi</label>
-                    <div className="flex gap-3">{["jne", "pos", "tiki"].map((courier) => (<button key={courier} type="button" onClick={() => setField("courier", courier)} className={`flex-1 py-3 border rounded-xl font-bold text-sm uppercase transition-all ${formData.courier === courier ? "border-[var(--color-brand-500)] bg-[var(--color-brand-50)] text-[var(--color-brand-600)]" : "border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-zinc-800"}`}>{courier}</button>))}</div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">{courierOptions.map((courier) => (<button key={courier.value} type="button" onClick={() => setField("courier", courier.value)} className={`py-3 px-2 border rounded-xl font-bold text-sm transition-all ${formData.courier === courier.value ? "border-[var(--color-brand-500)] bg-[var(--color-brand-50)] text-[var(--color-brand-600)]" : "border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-zinc-800"}`}>{courier.label}</button>))}</div>
                   </div>
                   {isCalcShipping && <div className="md:col-span-2 text-center text-gray-500 py-2 animate-pulse text-sm">Menghitung ongkir...</div>}
                   {!isCalcShipping && shippingCosts.length > 0 && formData.courier && (

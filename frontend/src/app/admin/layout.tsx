@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   Package,
   ShoppingCart,
+  TicketPercent,
   Warehouse,
   Users,
   LogOut,
@@ -22,6 +23,7 @@ const sidebarLinks = [
   { href: "/admin/products", label: "Produk", icon: Package },
   { href: "/admin/orders", label: "Pesanan", icon: ShoppingCart },
   { href: "/admin/inventory", label: "Inventori", icon: Warehouse },
+  { href: "/admin/coupons", label: "Kupon", icon: TicketPercent },
   { href: "/admin/customers", label: "Pelanggan", icon: Users },
 ];
 

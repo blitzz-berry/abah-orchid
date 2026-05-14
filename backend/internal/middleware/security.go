@@ -8,7 +8,11 @@ func SecurityHeaders() gin.HandlerFunc {
 		c.Header("X-Frame-Options", "DENY")
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
 		c.Header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-		c.Header("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https:; script-src 'self' 'unsafe-inline' https://accounts.google.com; style-src 'self' 'unsafe-inline'; frame-src 'self' https://accounts.google.com; connect-src 'self' https: https://accounts.google.com https://www.googleapis.com")
+		csp := "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; form-action 'none'; img-src 'self' data:; font-src 'none'; script-src 'none'; style-src 'none'; connect-src 'self'"
+		if c.Request.URL.Path == "/uploads/" || len(c.Request.URL.Path) >= len("/uploads/") && c.Request.URL.Path[:len("/uploads/")] == "/uploads/" {
+			csp = "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; img-src 'self' data:; media-src 'self'; script-src 'none'; style-src 'none'; sandbox"
+		}
+		c.Header("Content-Security-Policy", csp)
 		c.Next()
 	}
 }

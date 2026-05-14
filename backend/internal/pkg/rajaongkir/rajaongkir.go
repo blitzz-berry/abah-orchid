@@ -276,6 +276,60 @@ func fallbackCost(payload CostPayload) map[string]interface{} {
 			},
 		}
 	}
+	if courier == "jnt" {
+		services = []map[string]interface{}{
+			{
+				"service":     "EZ",
+				"description": "J&T Express Regular",
+				"cost": []map[string]interface{}{
+					{"value": base + 500, "etd": "2-4", "note": ""},
+				},
+			},
+			{
+				"service":     "ECO",
+				"description": "J&T Economy",
+				"cost": []map[string]interface{}{
+					{"value": base - 1500, "etd": "3-6", "note": ""},
+				},
+			},
+		}
+	}
+	if courier == "sicepat" {
+		services = []map[string]interface{}{
+			{
+				"service":     "REG",
+				"description": "SiCepat Regular",
+				"cost": []map[string]interface{}{
+					{"value": base + 1000, "etd": "2-4", "note": ""},
+				},
+			},
+			{
+				"service":     "BEST",
+				"description": "SiCepat Besok Sampai Tujuan",
+				"cost": []map[string]interface{}{
+					{"value": base + 12000, "etd": "1", "note": ""},
+				},
+			},
+		}
+	}
+	if courier == "anteraja" {
+		services = []map[string]interface{}{
+			{
+				"service":     "REG",
+				"description": "AnterAja Regular",
+				"cost": []map[string]interface{}{
+					{"value": base + 750, "etd": "2-5", "note": ""},
+				},
+			},
+			{
+				"service":     "NEXT",
+				"description": "AnterAja Next Day",
+				"cost": []map[string]interface{}{
+					{"value": base + 11500, "etd": "1", "note": ""},
+				},
+			},
+		}
+	}
 	if courier == "tiki" {
 		services = []map[string]interface{}{
 			{

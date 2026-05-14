@@ -346,10 +346,53 @@ func (s *orderService) GetOrderByID(orderID, userID string) (*model.Order, error
 }
 
 func (s *orderService) UpdateOrderStatus(orderID string, status string) error {
+	status = normalizeOrderStatus(status)
+	if status == "" {
+		return errors.New("invalid order status")
+	}
+
+	order, err := s.orderRepo.GetOrderByID(orderID)
+	if err != nil {
+		return err
+	}
+	if !canTransitionOrder(order.Status, status) {
+		return fmt.Errorf("invalid order status transition: %s -> %s", order.Status, status)
+	}
+
 	if status == "CANCELLED" {
 		return s.orderRepo.CancelOrderWithTx(orderID, "Order cancelled")
 	}
 	return s.orderRepo.UpdateOrderStatus(orderID, status)
+}
+
+func normalizeOrderStatus(status string) string {
+	status = strings.ToUpper(strings.TrimSpace(status))
+	status = strings.ReplaceAll(status, " ", "_")
+	switch status {
+	case "PENDING_PAYMENT", "PAID", "PROCESSING", "SHIPPED", "DELIVERED", "COMPLETED", "CANCELLED", "RETURN_REQUESTED", "REFUNDED":
+		return status
+	default:
+		return ""
+	}
+}
+
+func canTransitionOrder(from, to string) bool {
+	from = normalizeOrderStatus(from)
+	to = normalizeOrderStatus(to)
+	if from == "" || to == "" || from == to {
+		return false
+	}
+	allowed := map[string]map[string]struct{}{
+		"PENDING_PAYMENT":  {"CANCELLED": {}},
+		"PAID":             {"PROCESSING": {}, "CANCELLED": {}, "REFUNDED": {}},
+		"PROCESSING":       {"SHIPPED": {}, "CANCELLED": {}, "REFUNDED": {}},
+		"SHIPPED":          {"DELIVERED": {}},
+		"DELIVERED":        {"COMPLETED": {}, "RETURN_REQUESTED": {}},
+		"COMPLETED":        {"RETURN_REQUESTED": {}},
+		"RETURN_REQUESTED": {"REFUNDED": {}, "COMPLETED": {}},
+	}
+	_, ok := allowed[from][to]
+	return ok
 }
 
 func (s *orderService) ConfirmDelivery(orderID, userID string) error {
@@ -578,17 +621,18 @@ func (s *orderService) calculateDiscount(code string, subtotal float64) (float64
 	}
 
 	discount := coupon.DiscountValue
-	if coupon.DiscountType == "percentage" {
+	switch strings.ToLower(coupon.DiscountType) {
+	case "percentage":
 		discount = subtotal * coupon.DiscountValue / 100
+	case "fixed":
+	default:
+		return 0, errors.New("coupon discount type is invalid")
 	}
 	if coupon.MaxDiscount > 0 && discount > coupon.MaxDiscount {
 		discount = coupon.MaxDiscount
 	}
 	if discount > subtotal {
 		discount = subtotal
-	}
-	if err := s.db.Model(&model.Coupon{}).Where("id = ?", coupon.ID).UpdateColumn("used_count", gorm.Expr("used_count + 1")).Error; err != nil {
-		return 0, err
 	}
 	return discount, nil
 }

@@ -319,6 +319,7 @@ func (s *authService) issueTokens(user *model.User) (string, string, error) {
 		"sub":  user.ID.String(),
 		"role": user.Role,
 		"jti":  uuid.NewString(),
+		"iat":  time.Now().Unix(),
 		"exp":  time.Now().Add(15 * time.Minute).Unix(),
 	})
 	acToken, err := accessToken.SignedString([]byte(jwtSecret))
@@ -329,6 +330,7 @@ func (s *authService) issueTokens(user *model.User) (string, string, error) {
 	refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"sub": user.ID.String(),
 		"jti": uuid.NewString(),
+		"iat": time.Now().Unix(),
 		"exp": time.Now().Add(7 * 24 * time.Hour).Unix(),
 	})
 	rfToken, err := refreshToken.SignedString([]byte(jwtSecret))

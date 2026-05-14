@@ -353,7 +353,7 @@ func (h *AdminHandler) UpdateOrderStatus(c *gin.Context) {
 	}
 
 	if err := h.orderService.UpdateOrderStatus(id, req.Status); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update status"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	_ = h.createOrderNotification(id, req.Status)
@@ -421,13 +421,12 @@ func (h *AdminHandler) UpdateOrderTracking(c *gin.Context) {
 		return
 	}
 
-	now := time.Now()
-	if err := h.db.Model(&model.Order{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"tracking_number": req.TrackingNumber,
-		"status":          "SHIPPED",
-		"shipped_at":      &now,
-	}).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update tracking"})
+	if err := h.orderService.UpdateOrderStatus(id, "SHIPPED"); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.db.Model(&model.Order{}).Where("id = ?", id).Update("tracking_number", req.TrackingNumber).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save tracking number"})
 		return
 	}
 	_ = h.createOrderNotification(id, "SHIPPED")
@@ -466,6 +465,202 @@ func (h *AdminHandler) GetLowStockInventory(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": products})
+}
+
+func (h *AdminHandler) GetCoupons(c *gin.Context) {
+	var coupons []model.Coupon
+	if err := h.db.Order("created_at desc").Find(&coupons).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch coupons"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": coupons})
+}
+
+func (h *AdminHandler) CreateCoupon(c *gin.Context) {
+	var req couponRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	coupon, err := req.toCoupon()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.db.Create(coupon).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	h.logAdminActivity(c, "CREATE_COUPON", "coupon", coupon.ID.String(), gin.H{"code": coupon.Code})
+	c.JSON(http.StatusCreated, gin.H{"message": "Coupon created", "data": coupon})
+}
+
+func (h *AdminHandler) UpdateCoupon(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid coupon id"})
+		return
+	}
+	var req couponRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	coupon, err := req.toCoupon()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	updates := map[string]interface{}{
+		"code":           coupon.Code,
+		"description":    coupon.Description,
+		"discount_type":  coupon.DiscountType,
+		"discount_value": coupon.DiscountValue,
+		"min_purchase":   coupon.MinPurchase,
+		"max_discount":   coupon.MaxDiscount,
+		"usage_limit":    coupon.UsageLimit,
+		"valid_from":     coupon.ValidFrom,
+		"valid_until":    coupon.ValidUntil,
+		"is_active":      coupon.IsActive,
+	}
+	if err := h.db.Model(&model.Coupon{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	h.logAdminActivity(c, "UPDATE_COUPON", "coupon", id.String(), gin.H{"code": coupon.Code})
+	c.JSON(http.StatusOK, gin.H{"message": "Coupon updated"})
+}
+
+func (h *AdminHandler) DeleteCoupon(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid coupon id"})
+		return
+	}
+	if err := h.db.Delete(&model.Coupon{}, "id = ?", id).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	h.logAdminActivity(c, "DELETE_COUPON", "coupon", id.String(), nil)
+	c.JSON(http.StatusOK, gin.H{"message": "Coupon deleted"})
+}
+
+func (h *AdminHandler) PreviewCoupon(c *gin.Context) {
+	var req struct {
+		Code     string  `json:"code" binding:"required"`
+		Subtotal float64 `json:"subtotal" binding:"required,min=0"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	coupon, discount, err := h.previewCoupon(req.Code, req.Subtotal)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{
+		"code":        coupon.Code,
+		"description": coupon.Description,
+		"discount":    discount,
+	}})
+}
+
+type couponRequest struct {
+	Code          string  `json:"code" binding:"required"`
+	Description   string  `json:"description"`
+	DiscountType  string  `json:"discount_type" binding:"required"`
+	DiscountValue float64 `json:"discount_value" binding:"required,min=0"`
+	MinPurchase   float64 `json:"min_purchase"`
+	MaxDiscount   float64 `json:"max_discount"`
+	UsageLimit    int     `json:"usage_limit"`
+	ValidFrom     string  `json:"valid_from" binding:"required"`
+	ValidUntil    string  `json:"valid_until" binding:"required"`
+	IsActive      *bool   `json:"is_active"`
+}
+
+func (r couponRequest) toCoupon() (*model.Coupon, error) {
+	code := strings.ToUpper(strings.TrimSpace(r.Code))
+	if code == "" {
+		return nil, errors.New("coupon code is required")
+	}
+	discountType := strings.ToLower(strings.TrimSpace(r.DiscountType))
+	if discountType != "percentage" && discountType != "fixed" {
+		return nil, errors.New("discount_type must be percentage or fixed")
+	}
+	if r.DiscountValue <= 0 {
+		return nil, errors.New("discount_value must be greater than zero")
+	}
+	if r.MinPurchase < 0 || r.MaxDiscount < 0 || r.UsageLimit < 0 {
+		return nil, errors.New("coupon numeric fields cannot be negative")
+	}
+	validFrom, err := parseCouponTime(r.ValidFrom)
+	if err != nil {
+		return nil, errors.New("valid_from must be RFC3339 or YYYY-MM-DD")
+	}
+	validUntil, err := parseCouponTime(r.ValidUntil)
+	if err != nil {
+		return nil, errors.New("valid_until must be RFC3339 or YYYY-MM-DD")
+	}
+	if !validUntil.After(validFrom) {
+		return nil, errors.New("valid_until must be after valid_from")
+	}
+	isActive := true
+	if r.IsActive != nil {
+		isActive = *r.IsActive
+	}
+	return &model.Coupon{
+		Code:          code,
+		Description:   strings.TrimSpace(r.Description),
+		DiscountType:  discountType,
+		DiscountValue: r.DiscountValue,
+		MinPurchase:   r.MinPurchase,
+		MaxDiscount:   r.MaxDiscount,
+		UsageLimit:    r.UsageLimit,
+		ValidFrom:     validFrom,
+		ValidUntil:    validUntil,
+		IsActive:      isActive,
+	}, nil
+}
+
+func (h *AdminHandler) previewCoupon(code string, subtotal float64) (*model.Coupon, float64, error) {
+	var coupon model.Coupon
+	now := time.Now()
+	if err := h.db.Where("LOWER(code) = LOWER(?) AND is_active = ? AND valid_from <= ? AND valid_until >= ?", strings.TrimSpace(code), true, now, now).First(&coupon).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, 0, errors.New("coupon is invalid or expired")
+		}
+		return nil, 0, err
+	}
+	if coupon.MinPurchase > 0 && subtotal < coupon.MinPurchase {
+		return nil, 0, errors.New("subtotal does not meet coupon minimum purchase")
+	}
+	if coupon.UsageLimit > 0 && coupon.UsedCount >= coupon.UsageLimit {
+		return nil, 0, errors.New("coupon usage limit reached")
+	}
+	discount := coupon.DiscountValue
+	if coupon.DiscountType == "percentage" {
+		discount = subtotal * coupon.DiscountValue / 100
+	}
+	if coupon.MaxDiscount > 0 && discount > coupon.MaxDiscount {
+		discount = coupon.MaxDiscount
+	}
+	if discount > subtotal {
+		discount = subtotal
+	}
+	return &coupon, discount, nil
+}
+
+func parseCouponTime(value string) (time.Time, error) {
+	value = strings.TrimSpace(value)
+	if parsed, err := time.Parse(time.RFC3339, value); err == nil {
+		return parsed, nil
+	}
+	parsed, err := time.Parse("2006-01-02", value)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return parsed, nil
 }
 
 func (h *AdminHandler) UpdateInventory(c *gin.Context) {

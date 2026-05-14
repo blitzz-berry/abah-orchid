@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import api from "@/lib/api";
@@ -13,6 +13,22 @@ type GoogleAuthButtonProps = {
   mode: "login" | "register";
 };
 
+function googleAllowedOrigins() {
+  const configuredOrigins = (process.env.NEXT_PUBLIC_GOOGLE_ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  if (configuredOrigins.length > 0) return configuredOrigins;
+  if (process.env.NODE_ENV !== "production") return ["http://localhost:3000", "http://127.0.0.1:3000"];
+  return [];
+}
+
+function googleOAuthReady() {
+  const value = process.env.NEXT_PUBLIC_GOOGLE_OAUTH_READY;
+  if (value === undefined) return process.env.NODE_ENV !== "production";
+  return value === "true";
+}
+
 export default function GoogleAuthButton({ mode }: GoogleAuthButtonProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [error, setError] = useState("");
@@ -20,6 +36,8 @@ export default function GoogleAuthButton({ mode }: GoogleAuthButtonProps) {
   const router = useRouter();
   const login = useAuthStore((state) => state.login);
   const clientID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+  const allowedOrigins = useMemo(() => googleAllowedOrigins(), []);
+  const oauthReady = googleOAuthReady();
   const label = mode === "register" ? "Daftar dengan Google" : "Masuk dengan Google";
 
   useEffect(() => {
@@ -42,6 +60,16 @@ export default function GoogleAuthButton({ mode }: GoogleAuthButtonProps) {
       setSafeStatus("error");
       return;
     }
+    if (!oauthReady) {
+      setSafeError("Login Google belum aktif. Set NEXT_PUBLIC_GOOGLE_OAUTH_READY=true setelah origin OAuth Google Console sudah benar.");
+      setSafeStatus("error");
+      return;
+    }
+    if (allowedOrigins.length === 0 || !allowedOrigins.includes(window.location.origin)) {
+      setSafeError(`Login Google belum diaktifkan untuk ${window.location.origin}. Tambahkan origin ini ke NEXT_PUBLIC_GOOGLE_ALLOWED_ORIGINS dan Google OAuth Console.`);
+      setSafeStatus("error");
+      return;
+    }
 
     const renderButton = () => {
       if (!host || !window.google?.accounts?.id || !isMounted) return;
@@ -59,8 +87,6 @@ export default function GoogleAuthButton({ mode }: GoogleAuthButtonProps) {
 
       window.google.accounts.id.initialize({
         client_id: clientID,
-        ux_mode: "redirect",
-        login_uri: `${window.location.origin}/auth/google/callback?mode=${mode}`,
         callback: async (response) => {
           if (!response.credential) {
             setSafeError("Token Google tidak diterima. Silakan coba lagi.");
@@ -127,7 +153,7 @@ export default function GoogleAuthButton({ mode }: GoogleAuthButtonProps) {
         host.removeChild(googleContainer);
       }
     };
-  }, [clientID, login, mode, router]);
+  }, [allowedOrigins, clientID, login, mode, oauthReady, router]);
 
   return (
     <div className="space-y-2">
