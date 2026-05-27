@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import api from "@/lib/api";
 import { AlertTriangle, Edit2, Package, Search, TrendingDown, X } from "lucide-react";
 import { motion } from "framer-motion";
+import { Skeleton, TableRowsSkeleton } from "@/components/ui/loading";
 import type { Product, StockMovement } from "@/types";
 
 export default function AdminInventoryPage() {
@@ -91,11 +92,19 @@ export default function AdminInventoryPage() {
           { label: "Stok Rendah", value: lowStockCount.toString(), icon: AlertTriangle, color: "text-amber-600 bg-amber-50 dark:bg-amber-900/20" },
           { label: "Habis", value: outOfStock.toString(), icon: AlertTriangle, color: "text-red-600 bg-red-50 dark:bg-red-900/20" },
         ].map((kpi, index) => (
-          <motion.div key={kpi.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.05 }} className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-4">
-            <div className={`p-2 w-max rounded-xl mb-2 ${kpi.color}`}><kpi.icon className="w-4 h-4" /></div>
-            <div className="text-xs text-gray-500 mb-0.5">{kpi.label}</div>
-            <div className="text-lg font-extrabold">{kpi.value}</div>
-          </motion.div>
+          isLoading ? (
+            <div key={kpi.label} className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-4">
+              <Skeleton className="mb-3 h-8 w-8 rounded-xl" />
+              <Skeleton className="mb-2 h-3 w-24" />
+              <Skeleton className="h-5 w-20" />
+            </div>
+          ) : (
+            <motion.div key={kpi.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.05 }} className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-4">
+              <div className={`p-2 w-max rounded-xl mb-2 ${kpi.color}`}><kpi.icon className="w-4 h-4" /></div>
+              <div className="text-xs text-gray-500 mb-0.5">{kpi.label}</div>
+              <div className="text-lg font-extrabold">{kpi.value}</div>
+            </motion.div>
+          )
         ))}
       </div>
 
@@ -130,7 +139,7 @@ export default function AdminInventoryPage() {
                 </thead>
                 <tbody>
                   {isLoading ? (
-                    <tr><td colSpan={7} className="p-8 text-center"><div className="w-6 h-6 border-2 border-t-[var(--color-brand-600)] rounded-full animate-spin mx-auto" /></td></tr>
+                    <TableRowsSkeleton columns={7} rows={6} />
                   ) : filtered.length === 0 ? (
                     <tr><td colSpan={7} className="p-8 text-center text-gray-500 text-sm">Tidak ada inventory</td></tr>
                   ) : filtered.map((product) => {
@@ -173,7 +182,11 @@ export default function AdminInventoryPage() {
               </thead>
               <tbody>
                 {movements.length === 0 ? (
+                  isLoading ? (
+                  <TableRowsSkeleton columns={6} rows={6} />
+                ) : (
                   <tr><td colSpan={6} className="p-8 text-center text-gray-500 text-sm">Belum ada riwayat</td></tr>
+                  )
                 ) : movements.map((movement) => (
                   <tr key={movement.id} className="border-b border-gray-100 dark:border-gray-800">
                     <td className="p-4 text-sm font-medium">{movement.product?.name || movement.product_id}</td>

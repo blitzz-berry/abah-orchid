@@ -1,3 +1,5 @@
+name: orchidmart-prod
+
 services:
   api:
     image: ${BACKEND_IMAGE:-orchidmart-backend:latest}

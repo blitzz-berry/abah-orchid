@@ -8,6 +8,7 @@ import api from "@/lib/api";
 import { useAuthStore } from "@/store/useAuthStore";
 import Navbar from "@/components/ui/Navbar";
 import Footer from "@/components/ui/Footer";
+import { CartSkeleton, Spinner } from "@/components/ui/loading";
 import type { Address, Cart } from "@/types";
 
 type ProvinceOption = {
@@ -29,6 +30,17 @@ type ShippingCostOption = {
     value: number;
     etd: string;
   }>;
+};
+
+type CouponPreview = {
+  code: string;
+  description?: string;
+  discount: number;
+};
+
+const readApiError = (error: any, fallback: string) => {
+  const message = error?.response?.data?.error;
+  return typeof message === "string" && message.trim() ? message : fallback;
 };
 
 type CheckoutForm = {
@@ -117,6 +129,8 @@ export default function CheckoutPage() {
   const [cities, setCities] = useState<CityOption[]>([]);
   const [shippingCosts, setShippingCosts] = useState<ShippingCostOption[]>([]);
   const [isCalcShipping, setIsCalcShipping] = useState(false);
+  const [isApplyingCoupon, setIsApplyingCoupon] = useState(false);
+  const [couponPreview, setCouponPreview] = useState<CouponPreview | null>(null);
   const [formData, setFormData] = useState<CheckoutForm>(emptyForm);
   const router = useRouter();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -128,7 +142,16 @@ export default function CheckoutPage() {
   );
   const subtotal = checkoutItems.reduce((total, item) => total + item.product.price * item.quantity, 0);
   const totalWeight = checkoutItems.reduce((total, item) => total + item.quantity * (item.product.weight_gram || 1000), 0) || 1000;
-  const total = subtotal + formData.shipping_cost + formData.insurance_cost + formData.packing_cost;
+  const appliedDiscount = couponPreview?.discount || 0;
+  const total = subtotal + formData.shipping_cost + formData.insurance_cost + formData.packing_cost - appliedDiscount;
+
+  useEffect(() => {
+    setCouponPreview((prev) => {
+      if (!prev) return prev;
+      if (prev.code !== formData.coupon_code.trim().toUpperCase()) return null;
+      return prev;
+    });
+  }, [formData.coupon_code, subtotal]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -229,34 +252,83 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (!formData.city_id || !formData.courier || checkoutItems.length === 0) return;
 
+    let active = true;
+    setShippingCosts([]);
+    setFormData((prev) => ({
+      ...prev,
+      shipping_cost: 0,
+      courier_service: "",
+    }));
+
     const fetchShippingCost = async () => {
       setIsCalcShipping(true);
       try {
+        const requestedCourier = formData.courier;
+        const requestedCityID = formData.city_id;
         const response = await api.post("/shipping/cost", {
           origin: "152",
-          destination: formData.city_id,
+          destination: requestedCityID,
           weight: totalWeight,
-          courier: formData.courier,
+          courier: requestedCourier,
         });
+        if (!active) return;
         const costs = readRajaCosts(response.data);
         setShippingCosts(costs);
         if (costs.length > 0) {
           setFormData((prev) => ({
             ...prev,
+            courier: requestedCourier,
+            city_id: requestedCityID,
             shipping_cost: costs[0].cost[0].value,
             courier_service: costs[0].service,
           }));
         }
       } finally {
-        setIsCalcShipping(false);
+        if (active) setIsCalcShipping(false);
       }
     };
 
     void fetchShippingCost();
+    return () => {
+      active = false;
+    };
   }, [checkoutItems.length, formData.city_id, formData.courier, totalWeight]);
 
   const setField = <K extends keyof CheckoutForm>(key: K, value: CheckoutForm[K]) => {
     setFormData((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handlePreviewCoupon = async () => {
+    const code = formData.coupon_code.trim().toUpperCase();
+    if (!code) {
+      setCouponPreview(null);
+      alert("Masukkan kode kupon terlebih dahulu.");
+      return;
+    }
+    if (subtotal <= 0) {
+      setCouponPreview(null);
+      alert("Subtotal belum valid untuk menghitung kupon.");
+      return;
+    }
+
+    setIsApplyingCoupon(true);
+    try {
+      const response = await api.post("/coupons/preview", {
+        code,
+        subtotal,
+      });
+      const data = response.data.data;
+      setCouponPreview({
+        code: data.code,
+        description: data.description,
+        discount: Number(data.discount || 0),
+      });
+    } catch (e: any) {
+      setCouponPreview(null);
+      alert("Kupon tidak bisa dipakai: " + readApiError(e, "Silakan cek kembali kode kupon Anda."));
+    } finally {
+      setIsApplyingCoupon(false);
+    }
   };
 
   const handleCheckout = async () => {
@@ -310,7 +382,7 @@ export default function CheckoutPage() {
         router.push(createdOrder?.id ? `/orders/${createdOrder.id}` : "/orders");
       }
     } catch (e: any) {
-      alert("Proses pembayaran gagal: " + (e.response?.data?.error || e.message));
+      alert(readApiError(e, "Terjadi kendala saat memproses pembayaran. Silakan coba lagi."));
     } finally {
       setIsCheckingOut(false);
     }
@@ -326,7 +398,7 @@ export default function CheckoutPage() {
         <h1 className="text-3xl font-extrabold tracking-tight mb-8">Pembayaran</h1>
 
         {isLoading ? (
-          <div className="flex justify-center py-20"><div className="w-10 h-10 border-4 border-gray-200 border-t-[var(--color-leaf-500)] rounded-full animate-spin" /></div>
+          <CartSkeleton count={2} />
         ) : checkoutItems.length === 0 ? (
           <div className="text-center py-20 glass rounded-3xl">
             <Leaf className="w-16 h-16 text-gray-300 mx-auto mb-4" />
@@ -397,9 +469,9 @@ export default function CheckoutPage() {
                   <div><label className="text-sm font-medium mb-1 block">Provinsi</label><select value={formData.province_id} onChange={(e) => { setField("province_id", e.target.value); setField("city_id", ""); setField("shipping_cost", 0); setField("courier_service", ""); setShippingCosts([]); }} className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm"><option value="">Pilih Provinsi</option>{provinces.map((province) => <option key={province.province_id} value={province.province_id}>{province.province}</option>)}</select></div>
                   <div><label className="text-sm font-medium mb-1 block">Kota/Kabupaten</label><select value={formData.city_id} onChange={(e) => { setField("city_id", e.target.value); setField("shipping_cost", 0); setField("courier_service", ""); }} disabled={!formData.province_id} className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm disabled:opacity-50"><option value="">Pilih Kota</option>{cities.map((city) => <option key={city.city_id} value={city.city_id}>{city.type} {city.city_name}</option>)}</select></div>
                   <div className="md:col-span-2"><label className="text-sm font-medium mb-1 block">Ekspedisi</label>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">{courierOptions.map((courier) => (<button key={courier.value} type="button" onClick={() => setField("courier", courier.value)} className={`py-3 px-2 border rounded-xl font-bold text-sm transition-all ${formData.courier === courier.value ? "border-[var(--color-brand-500)] bg-[var(--color-brand-50)] text-[var(--color-brand-600)]" : "border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-zinc-800"}`}>{courier.label}</button>))}</div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">{courierOptions.map((courier) => (<button key={courier.value} type="button" onClick={() => { setField("courier", courier.value); setField("shipping_cost", 0); setField("courier_service", ""); setShippingCosts([]); }} className={`py-3 px-2 border rounded-xl font-bold text-sm transition-all ${formData.courier === courier.value ? "border-[var(--color-brand-500)] bg-[var(--color-brand-50)] text-[var(--color-brand-600)]" : "border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-zinc-800"}`}>{courier.label}</button>))}</div>
                   </div>
-                  {isCalcShipping && <div className="md:col-span-2 text-center text-gray-500 py-2 animate-pulse text-sm">Menghitung ongkir...</div>}
+                  {isCalcShipping && <div className="md:col-span-2 flex items-center justify-center gap-2 py-2 text-sm text-gray-500"><Spinner className="h-4 w-4 text-[var(--color-leaf-600)]" /> Menghitung ongkir...</div>}
                   {!isCalcShipping && shippingCosts.length > 0 && formData.courier && (
                     <div className="md:col-span-2"><label className="text-sm font-medium mb-2 block">Layanan</label>
                       <div className="flex flex-col gap-2">{shippingCosts.map((cost) => (
@@ -413,7 +485,21 @@ export default function CheckoutPage() {
                   <div className="md:col-span-2"><label className="text-sm font-medium mb-1 block">Catatan</label><input value={formData.note} onChange={(e) => setField("note", e.target.value)} className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm" placeholder="Catatan untuk penjual (opsional)" /></div>
                   <div><label className="text-sm font-medium mb-1 block">Packing</label><select value={formData.packing_type} onChange={(e) => { const premium = e.target.value === "premium"; setField("packing_type", e.target.value); setField("packing_cost", premium ? 15000 : 0); }} className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm"><option value="standard">Standard</option><option value="premium">Premium tanaman hidup (+Rp 15.000)</option></select></div>
                   <label className="md:col-span-2 flex items-center gap-3 rounded-xl border border-gray-200 dark:border-gray-800 p-3 text-sm"><input type="checkbox" checked={formData.shipping_insurance} onChange={(e) => { setField("shipping_insurance", e.target.checked); setField("insurance_cost", e.target.checked ? Math.ceil(subtotal * 0.005) : 0); }} /> Tambahkan asuransi pengiriman</label>
-                  <div><label className="text-sm font-medium mb-1 block">Kupon</label><input value={formData.coupon_code} onChange={(e) => setField("coupon_code", e.target.value.toUpperCase())} className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm" placeholder="Kode kupon" /></div>
+                  <div>
+                    <label className="text-sm font-medium mb-1 block">Kupon</label>
+                    <div className="flex gap-2">
+                      <input value={formData.coupon_code} onChange={(e) => setField("coupon_code", e.target.value.toUpperCase())} className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm" placeholder="Kode kupon" />
+                      <button type="button" onClick={handlePreviewCoupon} disabled={isApplyingCoupon || !formData.coupon_code.trim()} className="shrink-0 rounded-xl border border-gray-200 dark:border-gray-800 px-4 py-3 text-sm font-bold hover:bg-gray-50 dark:hover:bg-zinc-800 disabled:opacity-50">
+                        {isApplyingCoupon ? "Cek..." : "Pakai"}
+                      </button>
+                    </div>
+                    {couponPreview && (
+                      <p className="mt-2 text-xs font-medium text-emerald-600">
+                        {couponPreview.code} aktif. Diskon Rp {couponPreview.discount.toLocaleString("id-ID")}
+                        {couponPreview.description ? ` - ${couponPreview.description}` : ""}
+                      </p>
+                    )}
+                  </div>
                   <div><label className="text-sm font-medium mb-1 block">Catatan tanaman hidup</label><input value={formData.live_plant_note} onChange={(e) => setField("live_plant_note", e.target.value)} className="w-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm" placeholder="Instruksi packing/handling" /></div>
                   <div className="md:col-span-2">
                     <label className="text-sm font-medium mb-2 block">Metode Pembayaran</label>
@@ -437,9 +523,10 @@ export default function CheckoutPage() {
                 <div className="flex justify-between mb-3 text-sm text-gray-600 dark:text-gray-300"><span className="flex items-center gap-1"><Truck className="w-4 h-4" /> Ongkir</span><span>Rp {formData.shipping_cost.toLocaleString("id-ID")}</span></div>
                 <div className="flex justify-between mb-3 text-sm text-gray-600 dark:text-gray-300"><span>Packing</span><span>Rp {formData.packing_cost.toLocaleString("id-ID")}</span></div>
                 <div className="flex justify-between mb-3 text-sm text-gray-600 dark:text-gray-300"><span>Asuransi</span><span>Rp {formData.insurance_cost.toLocaleString("id-ID")}</span></div>
+                {appliedDiscount > 0 && <div className="flex justify-between mb-3 text-sm text-emerald-600"><span>Diskon Kupon</span><span>- Rp {appliedDiscount.toLocaleString("id-ID")}</span></div>}
                 <div className="flex justify-between mb-6 pb-6 border-b border-gray-200 dark:border-gray-800 font-extrabold text-lg"><span>Total</span><span className="text-[var(--color-leaf-600)]">Rp {total.toLocaleString("id-ID")}</span></div>
                 <button onClick={handleCheckout} disabled={isCheckingOut || formData.shipping_cost === 0 || !formData.courier_service} className="w-full bg-black text-white dark:bg-white dark:text-black py-4 rounded-xl flex items-center justify-center gap-2 font-bold hover:scale-[1.02] transition-transform disabled:opacity-50">
-                  <CreditCard className="w-5 h-5" /> {isCheckingOut ? "Memproses..." : "Bayar Sekarang"}
+                  {isCheckingOut ? <Spinner /> : <CreditCard className="w-5 h-5" />} {isCheckingOut ? "Memproses..." : "Bayar Sekarang"}
                 </button>
                 <p className="text-xs text-gray-400 text-center mt-3">
                   {formData.payment_method.startsWith("midtrans") ? "Pembayaran online diproses melalui Midtrans." : "Pesanan dibuat dengan batas pembayaran 24 jam."}

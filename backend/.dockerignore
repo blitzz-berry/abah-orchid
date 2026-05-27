@@ -1,7 +1,12 @@
 .git
+.gocache
+.gomodcache
 .gotmp
+bin
 uploads
+uploads-private
 tmp
 *.log
-.env
+.env*
+*.exe
 Dockerfile

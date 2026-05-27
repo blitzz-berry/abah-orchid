@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import api from "@/lib/api";
 import type { Coupon } from "@/types";
 import { CheckCircle2, Edit2, Plus, Search, TicketPercent, Trash2, X } from "lucide-react";
+import { TableRowsSkeleton } from "@/components/ui/loading";
 
 type CouponForm = {
   id?: string;
@@ -178,7 +179,7 @@ export default function AdminCouponsPage() {
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={7} className="p-8 text-center"><div className="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-t-[var(--color-brand-600)]" /></td></tr>
+                <TableRowsSkeleton columns={7} rows={6} />
               ) : filtered.length === 0 ? (
                 <tr><td colSpan={7} className="p-8 text-center text-sm text-gray-500">Belum ada kupon</td></tr>
               ) : filtered.map((coupon) => (

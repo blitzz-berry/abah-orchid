@@ -3,7 +3,9 @@ package service
 import (
 	"errors"
 	"fmt"
+	"log"
 	"math"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +18,7 @@ import (
 
 	"orchidmart-backend/internal/dto/request"
 	"orchidmart-backend/internal/model"
+	"orchidmart-backend/internal/pkg/appcache"
 	midtransPkg "orchidmart-backend/internal/pkg/midtrans"
 	"orchidmart-backend/internal/pkg/rajaongkir"
 	"orchidmart-backend/internal/repository"
@@ -27,6 +30,12 @@ type OrderService interface {
 	GetOrderByID(orderID, userID string) (*model.Order, error)
 	UpdateOrderStatus(orderID string, status string) error
 	ConfirmDelivery(orderID, userID string) error
+	CancelOrder(orderID, userID, reason string) (string, error)
+	AdminCancelOrder(orderID, reason string) (string, error)
+	ApproveCancellation(orderID, reason string) (string, error)
+	RejectCancellation(orderID, reason string) (string, error)
+	ApproveReturn(orderID, reason string) (string, error)
+	RejectReturn(orderID, reason string) (string, error)
 	InitiatePayment(orderID, userID string) (*model.Payment, error)
 	GetPaymentStatus(orderID, userID string) (*model.Payment, error)
 	UploadPaymentProof(orderID, userID, proofImageURL string) (*model.Payment, error)
@@ -41,14 +50,15 @@ type orderService struct {
 	orderRepo repository.OrderRepository
 	cartRepo  repository.CartRepository
 	db        *gorm.DB
+	cache     appcache.Store
 }
 
-func NewOrderService(orderRepo repository.OrderRepository, cartRepo repository.CartRepository) OrderService {
-	return &orderService{orderRepo: orderRepo, cartRepo: cartRepo}
+func NewOrderService(orderRepo repository.OrderRepository, cartRepo repository.CartRepository, stores ...appcache.Store) OrderService {
+	return &orderService{orderRepo: orderRepo, cartRepo: cartRepo, cache: optionalCache(stores)}
 }
 
-func NewOrderServiceWithDB(orderRepo repository.OrderRepository, cartRepo repository.CartRepository, db *gorm.DB) OrderService {
-	return &orderService{orderRepo: orderRepo, cartRepo: cartRepo, db: db}
+func NewOrderServiceWithDB(orderRepo repository.OrderRepository, cartRepo repository.CartRepository, db *gorm.DB, stores ...appcache.Store) OrderService {
+	return &orderService{orderRepo: orderRepo, cartRepo: cartRepo, db: db, cache: optionalCache(stores)}
 }
 
 func (s *orderService) Checkout(userID string, req request.CheckoutRequest) (*model.Order, string, error) {
@@ -129,6 +139,7 @@ func (s *orderService) Checkout(userID string, req request.CheckoutRequest) (*mo
 	}
 
 	parsedUserID, _ := uuid.Parse(userID)
+	customerEmail := s.checkoutCustomerEmail(parsedUserID)
 	order := &model.Order{
 		ID:                 uuid.New(),
 		OrderNumber:        fmt.Sprintf("ORD-%s-%s", time.Now().Format("20060102"), uuid.New().String()[:6]),
@@ -159,6 +170,7 @@ func (s *orderService) Checkout(userID string, req request.CheckoutRequest) (*mo
 	if err := s.orderRepo.CreateOrderFromCartItemsWithTx(order, cart.ID.String(), req.CartItemIDs); err != nil {
 		return nil, "", err
 	}
+	s.invalidateCatalog()
 
 	if paymentMethod == "manual_bank_transfer" {
 		payment := model.Payment{
@@ -183,7 +195,7 @@ func (s *orderService) Checkout(userID string, req request.CheckoutRequest) (*mo
 		},
 		CustomerDetail: &midtrans.CustomerDetails{
 			FName: req.ShippingName,
-			Email: "customer@example.com", // Usually fetched from user
+			Email: customerEmail,
 			Phone: req.ShippingPhone,
 		},
 		EnabledPayments: enabledSnapPayments(paymentMethod),
@@ -194,7 +206,11 @@ func (s *orderService) Checkout(userID string, req request.CheckoutRequest) (*mo
 	}
 
 	snapResp, err := midtransPkg.SnapClient.CreateTransaction(snapReq)
-	if err != nil {
+	if hasSuccessfulMidtransResponse(snapResp) {
+		err = nil
+	}
+	if !isNilLikeError(err) {
+		log.Printf("midtrans create transaction failed for order %s method=%s total=%.2f: %v", order.ID.String(), paymentMethod, total, err)
 		return nil, "", err
 	}
 
@@ -214,6 +230,23 @@ func (s *orderService) Checkout(userID string, req request.CheckoutRequest) (*mo
 	}
 
 	return order, snapResp.RedirectURL, nil
+}
+
+func (s *orderService) checkoutCustomerEmail(userID uuid.UUID) string {
+	if s.db == nil || userID == uuid.Nil {
+		return "customer@example.com"
+	}
+
+	var user model.User
+	if err := s.db.Select("email").Where("id = ?", userID).First(&user).Error; err != nil {
+		return "customer@example.com"
+	}
+
+	email := strings.TrimSpace(user.Email)
+	if email == "" {
+		return "customer@example.com"
+	}
+	return email
 }
 
 func packingCostForType(packingType string) (float64, error) {
@@ -263,16 +296,16 @@ func findRajaOngkirServiceCost(payload interface{}, service string) (float64, bo
 	if !ok {
 		return 0, false
 	}
-	results, ok := raja["results"].([]interface{})
-	if !ok || len(results) == 0 {
+	results := normalizeInterfaceSlice(raja["results"])
+	if len(results) == 0 {
 		return 0, false
 	}
 	first, ok := results[0].(map[string]interface{})
 	if !ok {
 		return 0, false
 	}
-	costs, ok := first["costs"].([]interface{})
-	if !ok {
+	costs := normalizeInterfaceSlice(first["costs"])
+	if len(costs) == 0 {
 		return 0, false
 	}
 	for _, rawCost := range costs {
@@ -284,8 +317,8 @@ func findRajaOngkirServiceCost(payload interface{}, service string) (float64, bo
 		if strings.ToUpper(strings.TrimSpace(svc)) != service {
 			continue
 		}
-		costArr, ok := costItem["cost"].([]interface{})
-		if !ok || len(costArr) == 0 {
+		costArr := normalizeInterfaceSlice(costItem["cost"])
+		if len(costArr) == 0 {
 			continue
 		}
 		cost0, ok := costArr[0].(map[string]interface{})
@@ -312,6 +345,52 @@ func findRajaOngkirServiceCost(payload interface{}, service string) (float64, bo
 		}
 	}
 	return 0, false
+}
+
+func normalizeInterfaceSlice(value interface{}) []interface{} {
+	switch v := value.(type) {
+	case []interface{}:
+		return v
+	case []map[string]interface{}:
+		result := make([]interface{}, 0, len(v))
+		for _, item := range v {
+			result = append(result, item)
+		}
+		return result
+	case []map[string]string:
+		result := make([]interface{}, 0, len(v))
+		for _, item := range v {
+			converted := make(map[string]interface{}, len(item))
+			for key, raw := range item {
+				converted[key] = raw
+			}
+			result = append(result, converted)
+		}
+		return result
+	default:
+		return nil
+	}
+}
+
+func hasSuccessfulMidtransResponse(resp *snap.Response) bool {
+	if resp == nil {
+		return false
+	}
+	return strings.TrimSpace(resp.Token) != "" || strings.TrimSpace(resp.RedirectURL) != ""
+}
+
+func isNilLikeError(err error) bool {
+	if err == nil {
+		return true
+	}
+
+	value := reflect.ValueOf(err)
+	switch value.Kind() {
+	case reflect.Pointer, reflect.Interface, reflect.Map, reflect.Slice, reflect.Func:
+		return value.IsNil()
+	default:
+		return false
+	}
 }
 
 func normalizeIDSet(ids []string) map[string]struct{} {
@@ -360,7 +439,11 @@ func (s *orderService) UpdateOrderStatus(orderID string, status string) error {
 	}
 
 	if status == "CANCELLED" {
-		return s.orderRepo.CancelOrderWithTx(orderID, "Order cancelled")
+		err := s.orderRepo.CancelOrderWithTx(orderID, "Order cancelled")
+		if err == nil {
+			s.invalidateCatalog()
+		}
+		return err
 	}
 	return s.orderRepo.UpdateOrderStatus(orderID, status)
 }
@@ -369,7 +452,7 @@ func normalizeOrderStatus(status string) string {
 	status = strings.ToUpper(strings.TrimSpace(status))
 	status = strings.ReplaceAll(status, " ", "_")
 	switch status {
-	case "PENDING_PAYMENT", "PAID", "PROCESSING", "SHIPPED", "DELIVERED", "COMPLETED", "CANCELLED", "RETURN_REQUESTED", "REFUNDED":
+	case "PENDING_PAYMENT", "PAID", "PROCESSING", "SHIPPED", "DELIVERED", "COMPLETED", "CANCELLATION_REQUESTED", "CANCELLED", "RETURN_REQUESTED", "RETURN_APPROVED", "REFUNDED":
 		return status
 	default:
 		return ""
@@ -383,13 +466,15 @@ func canTransitionOrder(from, to string) bool {
 		return false
 	}
 	allowed := map[string]map[string]struct{}{
-		"PENDING_PAYMENT":  {"CANCELLED": {}},
-		"PAID":             {"PROCESSING": {}, "CANCELLED": {}, "REFUNDED": {}},
-		"PROCESSING":       {"SHIPPED": {}, "CANCELLED": {}, "REFUNDED": {}},
-		"SHIPPED":          {"DELIVERED": {}},
-		"DELIVERED":        {"COMPLETED": {}, "RETURN_REQUESTED": {}},
-		"COMPLETED":        {"RETURN_REQUESTED": {}},
-		"RETURN_REQUESTED": {"REFUNDED": {}, "COMPLETED": {}},
+		"PENDING_PAYMENT":        {"CANCELLED": {}},
+		"CANCELLATION_REQUESTED": {"CANCELLED": {}, "PAID": {}, "PROCESSING": {}, "REFUNDED": {}},
+		"PAID":                   {"PROCESSING": {}, "CANCELLED": {}, "REFUNDED": {}},
+		"PROCESSING":             {"SHIPPED": {}, "CANCELLED": {}, "REFUNDED": {}},
+		"SHIPPED":                {"DELIVERED": {}},
+		"DELIVERED":              {"COMPLETED": {}, "RETURN_REQUESTED": {}},
+		"COMPLETED":              {"RETURN_REQUESTED": {}},
+		"RETURN_REQUESTED":       {"RETURN_APPROVED": {}, "DELIVERED": {}, "COMPLETED": {}},
+		"RETURN_APPROVED":        {"REFUNDED": {}, "COMPLETED": {}},
 	}
 	_, ok := allowed[from][to]
 	return ok
@@ -397,6 +482,135 @@ func canTransitionOrder(from, to string) bool {
 
 func (s *orderService) ConfirmDelivery(orderID, userID string) error {
 	return s.orderRepo.ConfirmDelivery(orderID, userID)
+}
+
+func (s *orderService) CancelOrder(orderID, userID, reason string) (string, error) {
+	reason = strings.TrimSpace(reason)
+	order, err := s.orderRepo.GetOrderByIDForUser(orderID, userID)
+	if err != nil {
+		return "", err
+	}
+
+	switch order.Status {
+	case "PENDING_PAYMENT":
+		if reason == "" {
+			reason = "Customer cancelled pending order"
+		}
+		if err := s.orderRepo.CancelOrderWithTx(orderID, reason); err != nil {
+			return "", err
+		}
+		s.invalidateCatalog()
+		return "CANCELLED", nil
+	case "PAID", "PROCESSING":
+		if reason == "" {
+			return "", errors.New("cancellation reason is required")
+		}
+		if err := s.orderRepo.RequestCancellation(orderID, userID, reason); err != nil {
+			return "", err
+		}
+		return "CANCELLATION_REQUESTED", nil
+	case "CANCELLATION_REQUESTED":
+		return "", errors.New("cancellation request has already been submitted")
+	default:
+		return "", errors.New("order can no longer be cancelled")
+	}
+}
+
+func (s *orderService) AdminCancelOrder(orderID, reason string) (string, error) {
+	order, err := s.orderRepo.GetOrderByID(orderID)
+	if err != nil {
+		return "", err
+	}
+
+	if strings.TrimSpace(reason) == "" {
+		reason = "Admin cancelled order"
+	}
+
+	switch order.Status {
+	case "PENDING_PAYMENT":
+		if err := s.orderRepo.CancelOrderWithTx(orderID, reason); err != nil {
+			return "", err
+		}
+		s.invalidateCatalog()
+		return "CANCELLED", nil
+	case "PAID", "PROCESSING":
+		if err := s.orderRepo.RefundOrder(orderID, reason, order.Total); err != nil {
+			return "", err
+		}
+		s.invalidateCatalog()
+		return "REFUNDED", nil
+	case "CANCELLATION_REQUESTED":
+		return s.ApproveCancellation(orderID, reason)
+	default:
+		return "", errors.New("order is not eligible for admin cancellation")
+	}
+}
+
+func (s *orderService) ApproveCancellation(orderID, reason string) (string, error) {
+	order, err := s.orderRepo.GetOrderByID(orderID)
+	if err != nil {
+		return "", err
+	}
+	if order.Status != "CANCELLATION_REQUESTED" {
+		return "", errors.New("order is not waiting for cancellation review")
+	}
+
+	if strings.TrimSpace(reason) == "" {
+		reason = strings.TrimSpace(order.CancellationReason)
+	}
+	if strings.TrimSpace(reason) == "" {
+		reason = "Cancellation approved by admin"
+	}
+
+	previousStatus := normalizeOrderStatus(order.CancellationRequestedFromStatus)
+	switch previousStatus {
+	case "", "PENDING_PAYMENT":
+		if err := s.orderRepo.CancelOrderWithTx(orderID, reason); err != nil {
+			return "", err
+		}
+		s.invalidateCatalog()
+		return "CANCELLED", nil
+	case "PAID", "PROCESSING":
+		if err := s.orderRepo.RefundOrder(orderID, reason, order.Total); err != nil {
+			return "", err
+		}
+		s.invalidateCatalog()
+		return "REFUNDED", nil
+	default:
+		return "", errors.New("cancellation request origin status is invalid")
+	}
+}
+
+func (s *orderService) RejectCancellation(orderID, reason string) (string, error) {
+	if strings.TrimSpace(reason) == "" {
+		return "", errors.New("rejection reason is required")
+	}
+	return s.orderRepo.RejectCancellation(orderID, reason)
+}
+
+func (s *orderService) ApproveReturn(orderID, reason string) (string, error) {
+	order, err := s.orderRepo.GetOrderByID(orderID)
+	if err != nil {
+		return "", err
+	}
+	if order.Status != "RETURN_REQUESTED" {
+		return "", errors.New("order is not waiting for return review")
+	}
+	return s.orderRepo.ApproveReturn(orderID, reason)
+}
+
+func (s *orderService) RejectReturn(orderID, reason string) (string, error) {
+	if strings.TrimSpace(reason) == "" {
+		return "", errors.New("rejection reason is required")
+	}
+	order, err := s.orderRepo.GetOrderByID(orderID)
+	if err != nil {
+		return "", err
+	}
+	if order.Status != "RETURN_REQUESTED" {
+		return "", errors.New("order is not waiting for return review")
+	}
+	return s.orderRepo.RejectReturn(orderID, reason)
 }
 
 func (s *orderService) InitiatePayment(orderID, userID string) (*model.Payment, error) {
@@ -442,7 +656,11 @@ func (s *orderService) InitiatePayment(orderID, userID string) (*model.Payment, 
 	}
 
 	snapResp, err := midtransPkg.SnapClient.CreateTransaction(snapReq)
-	if err != nil {
+	if hasSuccessfulMidtransResponse(snapResp) {
+		err = nil
+	}
+	if !isNilLikeError(err) {
+		log.Printf("midtrans initiate payment failed for order %s method=%s total=%.2f: %v", order.ID.String(), paymentMethod, order.Total, err)
 		return nil, err
 	}
 
@@ -532,7 +750,11 @@ func (s *orderService) ConfirmManualPayment(orderID string) error {
 }
 
 func (s *orderService) ExpirePendingPayments() (int64, error) {
-	return s.orderRepo.ExpirePendingPayments(time.Now())
+	count, err := s.orderRepo.ExpirePendingPayments(time.Now())
+	if err == nil && count > 0 {
+		s.invalidateCatalog()
+	}
+	return count, err
 }
 
 func (s *orderService) RequestReturn(orderID, userID, reason string) error {
@@ -546,7 +768,11 @@ func (s *orderService) RefundOrder(orderID, reason string, amount float64) error
 	if strings.TrimSpace(reason) == "" {
 		return errors.New("refund reason is required")
 	}
-	return s.orderRepo.RefundOrder(orderID, reason, amount)
+	err := s.orderRepo.RefundOrder(orderID, reason, amount)
+	if err == nil {
+		s.invalidateCatalog()
+	}
+	return err
 }
 
 func normalizePaymentMethod(method string) string {
@@ -685,7 +911,11 @@ func (s *orderService) HandleMidtransWebhook(payload map[string]interface{}) err
 		if statusCode != "" || grossAmount != "" {
 			_ = s.orderRepo.CreateOrUpdatePayment(payment)
 		}
-		return s.orderRepo.CancelOrderWithTx(orderID, transactionStatus)
+		err := s.orderRepo.CancelOrderWithTx(orderID, transactionStatus)
+		if err == nil {
+			s.invalidateCatalog()
+		}
+		return err
 	}
 
 	return nil
@@ -697,4 +927,15 @@ func orderUUID(value string) uuid.UUID {
 		return uuid.Nil
 	}
 	return parsed
+}
+
+func optionalCache(stores []appcache.Store) appcache.Store {
+	if len(stores) > 0 && stores[0] != nil {
+		return stores[0]
+	}
+	return appcache.Disabled()
+}
+
+func (s *orderService) invalidateCatalog() {
+	s.cache.DeletePrefix(appcache.CatalogPrefix)
 }

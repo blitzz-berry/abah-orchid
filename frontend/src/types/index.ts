@@ -7,7 +7,6 @@ export interface User {
   full_name: string;
   phone?: string;
   role: 'customer' | 'admin';
-  customer_type?: 'B2B' | 'B2C';
   is_active?: boolean;
   created_at?: string;
 }
@@ -117,8 +116,10 @@ export type OrderStatus =
   | 'SHIPPED'
   | 'DELIVERED'
   | 'COMPLETED'
+  | 'CANCELLATION_REQUESTED'
   | 'CANCELLED'
   | 'RETURN_REQUESTED'
+  | 'RETURN_APPROVED'
   | 'REFUNDED';
 
 export interface OrderItem {
@@ -130,6 +131,16 @@ export interface OrderItem {
   product_price: number;
   quantity: number;
   subtotal: number;
+}
+
+export interface OrderStatusHistory {
+  id: string;
+  order_id: string;
+  from_status?: string;
+  to_status: string;
+  note?: string;
+  changed_by?: string;
+  created_at?: string;
 }
 
 export interface Order {
@@ -153,7 +164,17 @@ export interface Order {
   status: OrderStatus;
   note?: string;
   admin_note?: string;
+  cancellation_reason?: string;
+  cancellation_source?: string;
+  cancellation_requested_from_status?: string;
+  cancellation_rejected_reason?: string;
+  return_reason?: string;
+  return_requested_from_status?: string;
+  return_rejected_reason?: string;
+  refund_reason?: string;
+  refund_amount?: number;
   items?: OrderItem[];
+  status_history?: OrderStatusHistory[];
   payment?: Payment;
   payments?: Payment[];
   paid_at?: string;
@@ -161,6 +182,10 @@ export interface Order {
   delivered_at?: string;
   completed_at?: string;
   cancelled_at?: string;
+  cancellation_requested_at?: string;
+  return_requested_at?: string;
+  return_approved_at?: string;
+  refunded_at?: string;
   created_at?: string;
 }
 

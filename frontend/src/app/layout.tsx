@@ -1,13 +1,7 @@
 import type { Metadata } from "next";
-import { Outfit } from "next/font/google";
 import "./globals.css";
 import AuthProvider from "@/components/providers/AuthProvider";
 import FeedbackProvider from "@/components/providers/FeedbackProvider";
-
-const outfit = Outfit({
-  variable: "--font-sans",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "OrchidMart | Platform E-Commerce Anggrek Premium Indonesia",
@@ -24,7 +18,13 @@ export default function RootLayout({
   return (
     <html
       lang="id"
-      className={`${outfit.variable} h-full antialiased`}
+      style={
+        {
+          "--font-sans": '"Segoe UI", Arial, sans-serif',
+          "--font-display": "Georgia, serif",
+        } as React.CSSProperties
+      }
+      className="h-full antialiased"
       data-scroll-behavior="smooth"
     >
       <body className="min-h-full flex flex-col font-sans transition-colors duration-300">

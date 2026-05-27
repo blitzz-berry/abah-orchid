@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Leaf, Mail, MailCheck } from "lucide-react";
 import api from "@/lib/api";
+import { Spinner } from "@/components/ui/loading";
 import { motion } from "framer-motion";
 
 type ForgotPasswordResponse = {
@@ -16,10 +17,15 @@ type ForgotPasswordResponse = {
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isReady, setIsReady] = useState(false);
   const [sent, setSent] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
   const [error, setError] = useState("");
   const [devResetURL, setDevResetURL] = useState("");
+
+  useEffect(() => {
+    setIsReady(true);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,7 +95,7 @@ export default function ForgotPasswordPage() {
                   <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-white/50 dark:bg-black/50 border border-gray-200 dark:border-gray-800 focus:border-[var(--color-brand-500)] focus:ring-1 focus:ring-[var(--color-brand-500)] rounded-xl outline-none transition-all" placeholder="email@contoh.com" />
                 </div>
               </div>
-              <button type="submit" disabled={isLoading} className="w-full py-3 mt-2 bg-black text-white dark:bg-white dark:text-black rounded-xl font-bold disabled:opacity-50 hover:scale-[1.02] transition-transform">{isLoading ? "Mengirim..." : "Kirim Tautan Reset"}</button>
+              <button type="submit" disabled={!isReady || isLoading} className="w-full py-3 mt-2 bg-black text-white dark:bg-white dark:text-black rounded-xl font-bold disabled:opacity-50 hover:scale-[1.02] transition-transform inline-flex items-center justify-center gap-2">{isLoading && <Spinner className="h-4 w-4" />}{isLoading ? "Mengirim..." : "Kirim Tautan Reset"}</button>
             </form>
             <p className="text-center mt-6 text-sm text-gray-500">
               <Link href="/login" className="text-[var(--color-brand-600)] font-medium hover:underline flex items-center justify-center gap-1">

@@ -13,7 +13,9 @@ import (
 	"orchidmart-backend/internal/config"
 	"orchidmart-backend/internal/handler"
 	"orchidmart-backend/internal/middleware"
+	"orchidmart-backend/internal/pkg/appcache"
 	"orchidmart-backend/internal/pkg/midtrans"
+	"orchidmart-backend/internal/pkg/rajaongkir"
 	"orchidmart-backend/internal/pkg/storage"
 	"orchidmart-backend/internal/repository"
 	"orchidmart-backend/internal/service"
@@ -52,12 +54,15 @@ func main() {
 	}))
 
 	// Dependency Injection
+	dataCache := appcache.NewFromEnv()
+	rajaongkir.SetCache(dataCache)
+
 	userRepo := repository.NewUserRepository(config.DB)
 	authSvc := service.NewAuthService(userRepo)
 	authHandler := handler.NewAuthHandler(authSvc)
 
 	productRepo := repository.NewProductRepository(config.DB)
-	productSvc := service.NewProductService(productRepo)
+	productSvc := service.NewProductService(productRepo, dataCache)
 	productHandler := handler.NewProductHandler(productSvc)
 
 	cartRepo := repository.NewCartRepository(config.DB)
@@ -65,16 +70,16 @@ func main() {
 	cartHandler := handler.NewCartHandler(cartSvc)
 
 	orderRepo := repository.NewOrderRepository(config.DB)
-	orderSvc := service.NewOrderServiceWithDB(orderRepo, cartRepo, config.DB)
-	orderHandler := handler.NewOrderHandler(orderSvc)
-	uploadHandler := handler.NewUploadHandler(config.DB, orderSvc)
+	orderSvc := service.NewOrderServiceWithDB(orderRepo, cartRepo, config.DB, dataCache)
+	orderHandler := handler.NewOrderHandler(orderSvc, config.DB)
+	uploadHandler := handler.NewUploadHandler(config.DB, orderSvc, dataCache)
 	reviewRepo := repository.NewReviewRepository(config.DB)
 	reviewSvc := service.NewReviewService(reviewRepo, orderRepo)
 	reviewHandler := handler.NewReviewHandler(reviewSvc)
 
 	shippingHandler := handler.NewShippingHandler()
 	notificationHandler := handler.NewNotificationHandler(config.DB)
-	adminHandler := handler.NewAdminHandler(config.DB, orderSvc)
+	adminHandler := handler.NewAdminHandler(config.DB, orderSvc, dataCache)
 	if os.Getenv("PAYMENT_EXPIRY_WORKER") == "true" {
 		go func() {
 			ticker := time.NewTicker(15 * time.Minute)
@@ -189,6 +194,9 @@ func main() {
 			orderRoutes.GET("/:id", orderHandler.GetOrderByID)
 			orderRoutes.POST("", orderHandler.Checkout)
 			orderRoutes.POST("/checkout", orderHandler.Checkout)
+			orderRoutes.POST("/:id/cancel", middleware.RateLimit(10, 15*time.Minute), orderHandler.CancelOrder)
+			orderRoutes.PUT("/:id/cancel", middleware.RateLimit(10, 15*time.Minute), orderHandler.CancelOrder)
+			orderRoutes.PATCH("/:id/cancel", middleware.RateLimit(10, 15*time.Minute), orderHandler.CancelOrder)
 			orderRoutes.POST("/:id/confirm-delivery", orderHandler.ConfirmDelivery)
 			orderRoutes.POST("/:id/request-return", orderHandler.RequestReturn)
 		}
@@ -211,7 +219,7 @@ func main() {
 
 		couponRoutes := api.Group("/coupons", middleware.AuthMiddleware())
 		{
-			couponRoutes.POST("/preview", adminHandler.PreviewCoupon)
+			couponRoutes.POST("/preview", middleware.RateLimit(20, time.Minute), adminHandler.PreviewCoupon)
 		}
 
 		adminRoutes := api.Group("/admin", middleware.AuthMiddleware(), middleware.AdminMiddleware(), middleware.AdminIPAllowlist(), middleware.RateLimit(300, time.Minute))
@@ -243,6 +251,21 @@ func main() {
 			adminRoutes.GET("/orders/:id", adminHandler.GetOrderByID)
 			adminRoutes.PUT("/orders/:id/status", middleware.RequireAdminStepUp("update_order_status"), adminHandler.UpdateOrderStatus)
 			adminRoutes.PUT("/orders/:id/tracking", middleware.RequireAdminStepUp("update_order_tracking"), adminHandler.UpdateOrderTracking)
+			adminRoutes.POST("/orders/:id/cancel", middleware.RequireAdminStepUp("cancel_order"), adminHandler.CancelOrder)
+			adminRoutes.PUT("/orders/:id/cancel", middleware.RequireAdminStepUp("cancel_order"), adminHandler.CancelOrder)
+			adminRoutes.PATCH("/orders/:id/cancel", middleware.RequireAdminStepUp("cancel_order"), adminHandler.CancelOrder)
+			adminRoutes.POST("/orders/:id/approve-cancel", middleware.RequireAdminStepUp("approve_cancellation"), adminHandler.ApproveCancellation)
+			adminRoutes.PUT("/orders/:id/approve-cancel", middleware.RequireAdminStepUp("approve_cancellation"), adminHandler.ApproveCancellation)
+			adminRoutes.PATCH("/orders/:id/approve-cancel", middleware.RequireAdminStepUp("approve_cancellation"), adminHandler.ApproveCancellation)
+			adminRoutes.POST("/orders/:id/reject-cancel", middleware.RequireAdminStepUp("reject_cancellation"), adminHandler.RejectCancellation)
+			adminRoutes.PUT("/orders/:id/reject-cancel", middleware.RequireAdminStepUp("reject_cancellation"), adminHandler.RejectCancellation)
+			adminRoutes.PATCH("/orders/:id/reject-cancel", middleware.RequireAdminStepUp("reject_cancellation"), adminHandler.RejectCancellation)
+			adminRoutes.POST("/orders/:id/approve-return", middleware.RequireAdminStepUp("approve_return"), adminHandler.ApproveReturn)
+			adminRoutes.PUT("/orders/:id/approve-return", middleware.RequireAdminStepUp("approve_return"), adminHandler.ApproveReturn)
+			adminRoutes.PATCH("/orders/:id/approve-return", middleware.RequireAdminStepUp("approve_return"), adminHandler.ApproveReturn)
+			adminRoutes.POST("/orders/:id/reject-return", middleware.RequireAdminStepUp("reject_return"), adminHandler.RejectReturn)
+			adminRoutes.PUT("/orders/:id/reject-return", middleware.RequireAdminStepUp("reject_return"), adminHandler.RejectReturn)
+			adminRoutes.PATCH("/orders/:id/reject-return", middleware.RequireAdminStepUp("reject_return"), adminHandler.RejectReturn)
 			adminRoutes.POST("/orders/:id/confirm-payment", middleware.RequireAdminStepUp("confirm_payment"), adminHandler.ConfirmPayment)
 			adminRoutes.POST("/orders/:id/refund", middleware.RequireAdminStepUp("refund_order"), adminHandler.RefundOrder)
 			adminRoutes.GET("/orders/:id/invoice", adminHandler.PrintInvoice)
@@ -257,7 +280,7 @@ func main() {
 			adminRoutes.POST("/coupons", middleware.RequireAdminStepUp("create_coupon"), adminHandler.CreateCoupon)
 			adminRoutes.PUT("/coupons/:id", middleware.RequireAdminStepUp("update_coupon"), adminHandler.UpdateCoupon)
 			adminRoutes.DELETE("/coupons/:id", middleware.RequireAdminStepUp("delete_coupon"), adminHandler.DeleteCoupon)
-			adminRoutes.POST("/coupons/preview", adminHandler.PreviewCoupon)
+			adminRoutes.POST("/coupons/preview", middleware.RateLimit(60, time.Minute), adminHandler.PreviewCoupon)
 		}
 
 		wishlistRoutes := api.Group("/wishlist", middleware.AuthMiddleware())

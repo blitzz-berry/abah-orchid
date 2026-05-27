@@ -3,13 +3,17 @@ import api from "@/lib/api";
 const PLACEHOLDER_HOSTS = new Set(["orchidmart.example.com"]);
 const API_PREFIX = "/api/v1";
 
+function isLoopbackHost(hostname: string) {
+  return hostname === "localhost" || hostname === "127.0.0.1";
+}
+
 export function resolveUploadURL(url: string) {
   if (!url) return "";
 
   if (url.startsWith("http://") || url.startsWith("https://")) {
     try {
       const parsed = new URL(url);
-      if (PLACEHOLDER_HOSTS.has(parsed.hostname) && typeof window !== "undefined") {
+      if (typeof window !== "undefined" && (PLACEHOLDER_HOSTS.has(parsed.hostname) || (isLoopbackHost(parsed.hostname) && !isLoopbackHost(window.location.hostname)))) {
         return `${window.location.origin}${parsed.pathname}${parsed.search}`;
       }
     } catch {

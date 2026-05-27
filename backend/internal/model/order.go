@@ -33,26 +33,32 @@ type Order struct {
 	OrderNumber string    `gorm:"type:varchar(50);uniqueIndex;not null" json:"order_number"`
 	UserID      uuid.UUID `gorm:"type:uuid;index;not null" json:"user_id"`
 
-	ShippingName       string  `gorm:"type:varchar(255);not null" json:"shipping_name"`
-	ShippingPhone      string  `gorm:"type:varchar(20);not null" json:"shipping_phone"`
-	ShippingAddress    string  `gorm:"type:text;not null" json:"shipping_address"`
-	ShippingCity       string  `gorm:"type:varchar(100);not null" json:"shipping_city"`
-	ShippingProvince   string  `gorm:"type:varchar(100);not null" json:"shipping_province"`
-	ShippingPostalCode string  `gorm:"type:varchar(10);not null" json:"shipping_postal_code"`
-	CourierCode        string  `gorm:"type:varchar(20)" json:"courier_code"`
-	CourierService     string  `gorm:"type:varchar(50)" json:"courier_service"`
-	ShippingCost       float64 `gorm:"type:numeric(12,2)" json:"shipping_cost"`
-	TrackingNumber     string  `gorm:"type:varchar(100)" json:"tracking_number"`
-	ShippingInsurance  bool    `gorm:"default:false" json:"shipping_insurance"`
-	InsuranceCost      float64 `gorm:"type:numeric(12,2);default:0" json:"insurance_cost"`
-	PackingType        string  `gorm:"type:varchar(30);default:'standard'" json:"packing_type"`
-	PackingCost        float64 `gorm:"type:numeric(12,2);default:0" json:"packing_cost"`
-	LivePlantNote      string  `gorm:"type:text" json:"live_plant_note"`
-	TrackingStatus     string  `gorm:"type:varchar(100)" json:"tracking_status"`
-	EstimatedDelivery  string  `gorm:"type:varchar(100)" json:"estimated_delivery"`
-	ReturnReason       string  `gorm:"type:text" json:"return_reason"`
-	RefundReason       string  `gorm:"type:text" json:"refund_reason"`
-	RefundAmount       float64 `gorm:"type:numeric(12,2);default:0" json:"refund_amount"`
+	ShippingName                    string  `gorm:"type:varchar(255);not null" json:"shipping_name"`
+	ShippingPhone                   string  `gorm:"type:varchar(20);not null" json:"shipping_phone"`
+	ShippingAddress                 string  `gorm:"type:text;not null" json:"shipping_address"`
+	ShippingCity                    string  `gorm:"type:varchar(100);not null" json:"shipping_city"`
+	ShippingProvince                string  `gorm:"type:varchar(100);not null" json:"shipping_province"`
+	ShippingPostalCode              string  `gorm:"type:varchar(10);not null" json:"shipping_postal_code"`
+	CourierCode                     string  `gorm:"type:varchar(20)" json:"courier_code"`
+	CourierService                  string  `gorm:"type:varchar(50)" json:"courier_service"`
+	ShippingCost                    float64 `gorm:"type:numeric(12,2)" json:"shipping_cost"`
+	TrackingNumber                  string  `gorm:"type:varchar(100)" json:"tracking_number"`
+	ShippingInsurance               bool    `gorm:"default:false" json:"shipping_insurance"`
+	InsuranceCost                   float64 `gorm:"type:numeric(12,2);default:0" json:"insurance_cost"`
+	PackingType                     string  `gorm:"type:varchar(30);default:'standard'" json:"packing_type"`
+	PackingCost                     float64 `gorm:"type:numeric(12,2);default:0" json:"packing_cost"`
+	LivePlantNote                   string  `gorm:"type:text" json:"live_plant_note"`
+	TrackingStatus                  string  `gorm:"type:varchar(100)" json:"tracking_status"`
+	EstimatedDelivery               string  `gorm:"type:varchar(100)" json:"estimated_delivery"`
+	CancellationReason              string  `gorm:"type:text" json:"cancellation_reason"`
+	CancellationSource              string  `gorm:"type:varchar(30)" json:"cancellation_source"`
+	CancellationRequestedFromStatus string  `gorm:"type:varchar(30)" json:"cancellation_requested_from_status"`
+	CancellationRejectedReason      string  `gorm:"type:text" json:"cancellation_rejected_reason"`
+	ReturnReason                    string  `gorm:"type:text" json:"return_reason"`
+	ReturnRequestedFromStatus       string  `gorm:"type:varchar(30)" json:"return_requested_from_status"`
+	ReturnRejectedReason            string  `gorm:"type:text" json:"return_rejected_reason"`
+	RefundReason                    string  `gorm:"type:text" json:"refund_reason"`
+	RefundAmount                    float64 `gorm:"type:numeric(12,2);default:0" json:"refund_amount"`
 
 	Subtotal   float64 `gorm:"type:numeric(12,2);not null" json:"subtotal"`
 	Discount   float64 `gorm:"type:numeric(12,2);default:0" json:"discount"`
@@ -62,16 +68,18 @@ type Order struct {
 	Note       string  `gorm:"type:text" json:"note"`
 	AdminNote  string  `gorm:"type:text" json:"admin_note"`
 
-	PaidAt            *time.Time     `json:"paid_at"`
-	ShippedAt         *time.Time     `json:"shipped_at"`
-	DeliveredAt       *time.Time     `json:"delivered_at"`
-	CompletedAt       *time.Time     `json:"completed_at"`
-	CancelledAt       *time.Time     `json:"cancelled_at"`
-	ReturnRequestedAt *time.Time     `json:"return_requested_at"`
-	RefundedAt        *time.Time     `json:"refunded_at"`
-	CreatedAt         time.Time      `gorm:"index" json:"created_at"`
-	UpdatedAt         time.Time      `json:"updated_at"`
-	DeletedAt         gorm.DeletedAt `gorm:"index" json:"-"`
+	PaidAt                  *time.Time     `json:"paid_at"`
+	ShippedAt               *time.Time     `json:"shipped_at"`
+	DeliveredAt             *time.Time     `json:"delivered_at"`
+	CompletedAt             *time.Time     `json:"completed_at"`
+	CancelledAt             *time.Time     `json:"cancelled_at"`
+	CancellationRequestedAt *time.Time     `json:"cancellation_requested_at"`
+	ReturnRequestedAt       *time.Time     `json:"return_requested_at"`
+	ReturnApprovedAt        *time.Time     `json:"return_approved_at"`
+	RefundedAt              *time.Time     `json:"refunded_at"`
+	CreatedAt               time.Time      `gorm:"index" json:"created_at"`
+	UpdatedAt               time.Time      `json:"updated_at"`
+	DeletedAt               gorm.DeletedAt `gorm:"index" json:"-"`
 
 	Items         []OrderItem          `gorm:"foreignKey:OrderID" json:"items"`
 	StatusHistory []OrderStatusHistory `gorm:"foreignKey:OrderID" json:"status_history"`

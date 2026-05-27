@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ShoppingBag, User, LogOut, Menu, X, Heart, Bell, CheckCheck, ClipboardList } from "lucide-react";
+import { ShoppingBag, User, LogOut, Menu, X, Heart, Bell, CheckCheck, ClipboardList, ChevronRight } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -16,10 +16,11 @@ export default function Navbar() {
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [notificationFilter, setNotificationFilter] = useState<"all" | "unread">("all");
+  const [now, setNow] = useState(() => Date.now());
 
   const navLinks = [
     { href: "/products", label: "Katalog" },
-    { href: "/products?type=B2B", label: "B2B Order" },
   ];
 
   const isActive = (href: string) => pathname === href;
@@ -54,6 +55,11 @@ export default function Navbar() {
     };
   }, [isAuthenticated, user]);
 
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   const markNotificationRead = async (notification: Notification) => {
     if (!notification.is_read) {
       setNotifications((prev) => prev.map((item) => item.id === notification.id ? { ...item, is_read: true } : item));
@@ -77,6 +83,30 @@ export default function Navbar() {
     }
   };
 
+  const visibleNotifications = notificationFilter === "unread"
+    ? notifications.filter((item) => !item.is_read)
+    : notifications;
+
+  const formatNotificationTime = (value?: string) => {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+
+    const diffMs = date.getTime() - now;
+    const diffMinutes = Math.round(diffMs / 60000);
+    const rtf = new Intl.RelativeTimeFormat("id-ID", { numeric: "auto" });
+
+    if (Math.abs(diffMinutes) < 60) return rtf.format(diffMinutes, "minute");
+
+    const diffHours = Math.round(diffMinutes / 60);
+    if (Math.abs(diffHours) < 24) return rtf.format(diffHours, "hour");
+
+    const diffDays = Math.round(diffHours / 24);
+    if (Math.abs(diffDays) < 7) return rtf.format(diffDays, "day");
+
+    return date.toLocaleDateString("id-ID", { day: "numeric", month: "short" });
+  };
+
   return (
     <nav className="glass fixed top-0 w-full z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -91,9 +121,9 @@ export default function Navbar() {
 
           {/* Desktop Nav Links */}
           <div className="hidden md:flex items-center gap-1">
-            {navLinks.map((link) => (
+            {navLinks.map((link, index) => (
               <Link
-                key={link.href}
+                key={`${link.href}-${index}`}
                 href={link.href}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   isActive(link.href)
@@ -140,43 +170,126 @@ export default function Navbar() {
                       initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: 8 }}
-                      className="absolute right-0 mt-2 w-[320px] max-w-[calc(100vw-2rem)] rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-zinc-950 shadow-2xl overflow-hidden"
+                      className="absolute right-0 mt-2 w-[360px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-zinc-950"
                     >
-                      <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-gray-800">
-                        <div className="font-bold text-sm">Notifikasi</div>
-                        {unreadCount > 0 && (
-                          <button onClick={markAllNotificationsRead} className="text-xs font-bold text-[var(--color-brand-600)] inline-flex items-center gap-1">
-                            <CheckCheck className="w-3.5 h-3.5" /> Tandai dibaca
+                      <div className="border-b border-gray-100 p-4 dark:border-gray-800">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <div className="text-sm font-bold">Notifikasi</div>
+                            <div className="mt-1 text-xs text-gray-500">
+                              {unreadCount > 0 ? `${unreadCount} notifikasi belum dibaca` : "Semua notifikasi sudah dibaca"}
+                            </div>
+                          </div>
+                          {unreadCount > 0 && (
+                            <button
+                              onClick={markAllNotificationsRead}
+                              className="inline-flex items-center gap-1 rounded-full bg-[var(--color-brand-50)] px-3 py-1 text-[11px] font-bold text-[var(--color-brand-700)] transition-colors hover:bg-[var(--color-brand-100)] dark:bg-[var(--color-brand-900)]/30 dark:text-[var(--color-brand-200)]"
+                            >
+                              <CheckCheck className="h-3.5 w-3.5" /> Tandai dibaca
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="mt-4 grid grid-cols-2 gap-2 rounded-2xl bg-gray-100 p-1 dark:bg-zinc-900">
+                          <button
+                            onClick={() => setNotificationFilter("all")}
+                            className={`inline-flex min-h-9 items-center justify-center rounded-2xl px-3 py-2 text-center text-xs font-bold leading-none transition-colors ${
+                              notificationFilter === "all"
+                                ? "bg-white text-[var(--color-brand-700)] shadow-sm dark:bg-zinc-800 dark:text-[var(--color-brand-200)]"
+                                : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                            }`}
+                          >
+                            Semua
                           </button>
-                        )}
+                          <button
+                            onClick={() => setNotificationFilter("unread")}
+                            className={`inline-flex min-h-9 items-center justify-center rounded-2xl px-3 py-2 text-center text-xs font-bold leading-none transition-colors ${
+                              notificationFilter === "unread"
+                                ? "bg-white text-[var(--color-brand-700)] shadow-sm dark:bg-zinc-800 dark:text-[var(--color-brand-200)]"
+                                : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                            }`}
+                          >
+                            Belum dibaca
+                          </button>
+                        </div>
                       </div>
-                      <div className="max-h-[360px] overflow-y-auto">
-                        {notifications.length === 0 ? (
-                          <div className="p-5 text-sm text-gray-500 text-center">Belum ada notifikasi.</div>
+
+                      <div className="border-b border-gray-100 bg-gradient-to-b from-[var(--color-brand-50)]/70 to-transparent px-4 py-3 dark:border-gray-800 dark:from-[var(--color-brand-900)]/10">
+                        <div className="flex items-center justify-between rounded-2xl border border-[var(--color-brand-100)] bg-white/90 px-3 py-2 dark:border-[var(--color-brand-900)]/40 dark:bg-zinc-950/80">
+                          <div>
+                            <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-gray-500">Ringkasan</div>
+                            <div className="mt-1 text-sm font-semibold text-gray-900 dark:text-gray-100">Inbox notifikasi akun</div>
+                          </div>
+                          <div className="rounded-2xl bg-[var(--color-brand-600)] px-3 py-1.5 text-xs font-extrabold text-white">
+                            {visibleNotifications.length}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="max-h-[380px] overflow-y-auto px-2 py-2">
+                        {visibleNotifications.length === 0 ? (
+                          <div className="flex flex-col items-center justify-center rounded-2xl px-4 py-10 text-center">
+                            <div className="mb-3 rounded-2xl bg-gray-100 p-3 dark:bg-zinc-900">
+                              <Bell className="h-5 w-5 text-gray-400" />
+                            </div>
+                            <div className="text-sm font-bold">
+                              {notificationFilter === "unread" ? "Tidak ada notifikasi baru" : "Belum ada notifikasi"}
+                            </div>
+                            <div className="mt-1 max-w-[220px] text-xs leading-relaxed text-gray-500">
+                              {notificationFilter === "unread"
+                                ? "Semua update penting sudah kamu baca."
+                                : "Notifikasi pesanan dan update akun akan muncul di sini."}
+                            </div>
+                          </div>
                         ) : (
-                          notifications.map((notification) => {
+                          visibleNotifications.map((notification) => {
                             const href = notification.reference_type === "order" && notification.reference_id ? `/orders/${notification.reference_id}` : "/orders";
                             return (
                               <Link
                                 key={notification.id}
                                 href={href}
                                 onClick={() => void markNotificationRead(notification)}
-                                className={`block p-4 border-b border-gray-100 dark:border-gray-800 last:border-b-0 hover:bg-gray-50 dark:hover:bg-zinc-900 ${notification.is_read ? "" : "bg-[var(--color-brand-50)]/70 dark:bg-[var(--color-brand-900)]/20"}`}
+                                className={`group block rounded-2xl border p-3 transition-colors ${notification.is_read ? "border-transparent hover:bg-gray-50 dark:hover:bg-zinc-900" : "border-[var(--color-brand-100)] bg-[var(--color-brand-50)]/70 hover:bg-[var(--color-brand-50)] dark:border-[var(--color-brand-900)]/40 dark:bg-[var(--color-brand-900)]/15"}`}
                               >
                                 <div className="flex items-start gap-3">
-                                  <span className={`mt-1 w-2 h-2 rounded-full shrink-0 ${notification.is_read ? "bg-gray-300" : "bg-[var(--color-brand-600)]"}`} />
-                                  <div className="min-w-0">
-                                    <div className="text-sm font-bold">{notification.title}</div>
-                                    <div className="text-xs text-gray-500 leading-relaxed mt-1">{notification.message}</div>
-                                    {notification.created_at && (
-                                      <div className="text-[11px] text-gray-400 mt-2">{new Date(notification.created_at).toLocaleString("id-ID")}</div>
-                                    )}
+                                  <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-gray-100 dark:bg-zinc-900 dark:ring-gray-800">
+                                    <Bell className={`h-4 w-4 ${notification.is_read ? "text-gray-400" : "text-[var(--color-brand-600)]"}`} />
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="min-w-0">
+                                        <div className="flex items-center gap-2">
+                                          <span className="truncate text-sm font-bold">{notification.title}</span>
+                                          {!notification.is_read && <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--color-brand-600)]" />}
+                                        </div>
+                                        <div className="mt-1 line-clamp-2 text-xs leading-relaxed text-gray-500">
+                                          {notification.message}
+                                        </div>
+                                      </div>
+                                      <span className="shrink-0 text-[11px] font-medium text-gray-400">
+                                        {formatNotificationTime(notification.created_at)}
+                                      </span>
+                                    </div>
+                                    <div className="mt-3 inline-flex items-center gap-1 text-[11px] font-bold text-[var(--color-brand-600)] opacity-0 transition-opacity group-hover:opacity-100 dark:text-[var(--color-brand-200)]">
+                                      Buka detail <ChevronRight className="h-3.5 w-3.5" />
+                                    </div>
                                   </div>
                                 </div>
                               </Link>
                             );
                           })
                         )}
+                      </div>
+
+                      <div className="border-t border-gray-100 p-3 dark:border-gray-800">
+                        <Link
+                          href="/orders"
+                          onClick={() => setNotificationOpen(false)}
+                          className="flex items-center justify-between rounded-2xl bg-gray-50 px-4 py-3 text-sm font-bold text-gray-700 transition-colors hover:bg-gray-100 dark:bg-zinc-900 dark:text-gray-200 dark:hover:bg-zinc-800"
+                        >
+                          <span>Lihat semua aktivitas pesanan</span>
+                          <ChevronRight className="h-4 w-4" />
+                        </Link>
                       </div>
                     </motion.div>
                   )}
@@ -264,9 +377,9 @@ export default function Navbar() {
             className="md:hidden border-t border-gray-200/50 dark:border-gray-800/50 overflow-hidden"
           >
             <div className="px-4 py-4 flex flex-col gap-1">
-              {navLinks.map((link) => (
+              {navLinks.map((link, index) => (
                 <Link
-                  key={link.href}
+                  key={`${link.href}-${index}`}
                   href={link.href}
                   onClick={() => setMobileOpen(false)}
                   className={`px-4 py-3 rounded-xl text-sm font-medium transition-colors ${
@@ -280,6 +393,19 @@ export default function Navbar() {
               ))}
               {isAuthenticated ? (
                 <>
+                  {user?.role === "admin" && (
+                    <Link
+                      href="/admin"
+                      onClick={() => setMobileOpen(false)}
+                      className={`px-4 py-3 rounded-xl text-sm font-medium ${
+                        pathname.startsWith("/admin")
+                          ? "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-200"
+                          : "hover:bg-black/5 dark:hover:bg-white/5"
+                      }`}
+                    >
+                      Admin Panel
+                    </Link>
+                  )}
                   <Link
                     href="/wishlist"
                     onClick={() => setMobileOpen(false)}

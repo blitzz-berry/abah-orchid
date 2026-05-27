@@ -20,6 +20,35 @@ function readAllowlist(envKey: string) {
     .filter(Boolean);
 }
 
+function sanitizeOriginPattern(value: string) {
+  return value
+    .replace(/^https?:\/\//, "")
+    .replace(/\/.*$/, "")
+    .trim();
+}
+
+function buildAllowedDevOrigins() {
+  const origins = new Set<string>(["*.trycloudflare.com"]);
+  const apiOrigin = originFromURL(process.env.NEXT_PUBLIC_API_URL);
+  if (apiOrigin) {
+    const sanitized = sanitizeOriginPattern(apiOrigin);
+    if (sanitized) origins.add(sanitized);
+  }
+  for (const value of readAllowlist("NEXT_PUBLIC_GOOGLE_ALLOWED_ORIGINS")) {
+    const sanitized = sanitizeOriginPattern(value);
+    if (sanitized) origins.add(sanitized);
+  }
+  for (const value of readAllowlist("FRONTEND_URL")) {
+    const sanitized = sanitizeOriginPattern(value);
+    if (sanitized) origins.add(sanitized);
+  }
+  for (const value of readAllowlist("NEXT_ALLOWED_DEV_ORIGINS")) {
+    const sanitized = sanitizeOriginPattern(value);
+    if (sanitized) origins.add(sanitized);
+  }
+  return Array.from(origins);
+}
+
 function buildContentSecurityPolicy() {
   const devInline = "'unsafe-" + "inline'";
   const apiOrigin = originFromURL(process.env.NEXT_PUBLIC_API_URL);
@@ -69,9 +98,24 @@ function buildContentSecurityPolicy() {
 }
 
 const contentSecurityPolicy = buildContentSecurityPolicy();
+const allowedDevOrigins = buildAllowedDevOrigins();
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  allowedDevOrigins,
+  async rewrites() {
+    if (isProd) return [];
+    return [
+      {
+        source: "/api/v1/:path*",
+        destination: "http://localhost:8080/api/v1/:path*",
+      },
+      {
+        source: "/uploads/:path*",
+        destination: "http://localhost:8080/uploads/:path*",
+      },
+    ];
+  },
   async headers() {
     return [
       {

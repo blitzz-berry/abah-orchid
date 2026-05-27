@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"orchidmart-backend/internal/model"
+	"orchidmart-backend/internal/pkg/appcache"
 	"orchidmart-backend/internal/pkg/storage"
 	"orchidmart-backend/internal/service"
 )
@@ -18,10 +19,15 @@ import (
 type UploadHandler struct {
 	db           *gorm.DB
 	orderService service.OrderService
+	cache        appcache.Store
 }
 
-func NewUploadHandler(db *gorm.DB, orderService service.OrderService) *UploadHandler {
-	return &UploadHandler{db: db, orderService: orderService}
+func NewUploadHandler(db *gorm.DB, orderService service.OrderService, stores ...appcache.Store) *UploadHandler {
+	store := appcache.Disabled()
+	if len(stores) > 0 && stores[0] != nil {
+		store = stores[0]
+	}
+	return &UploadHandler{db: db, orderService: orderService, cache: store}
 }
 
 func (h *UploadHandler) UploadProductImage(c *gin.Context) {
@@ -66,6 +72,7 @@ func (h *UploadHandler) UploadProductImage(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	h.cache.DeletePrefix(appcache.CatalogPrefix)
 	c.JSON(http.StatusCreated, gin.H{"message": "Product image uploaded", "data": gin.H{"image": image, "upload": result}})
 }
 

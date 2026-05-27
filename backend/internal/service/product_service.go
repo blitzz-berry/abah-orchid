@@ -1,8 +1,13 @@
 package service
 
 import (
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
 	"orchidmart-backend/internal/model"
+	"orchidmart-backend/internal/pkg/appcache"
 	"orchidmart-backend/internal/repository"
+	"time"
 )
 
 type ProductService interface {
@@ -21,38 +26,97 @@ type ProductService interface {
 
 type productService struct {
 	productRepo repository.ProductRepository
+	cache       appcache.Store
 }
 
-func NewProductService(productRepo repository.ProductRepository) ProductService {
-	return &productService{productRepo}
+type cachedProductList struct {
+	Products []model.Product `json:"products"`
+	Total    int64           `json:"total"`
+}
+
+func NewProductService(productRepo repository.ProductRepository, stores ...appcache.Store) ProductService {
+	store := appcache.Disabled()
+	if len(stores) > 0 && stores[0] != nil {
+		store = stores[0]
+	}
+	return &productService{productRepo: productRepo, cache: store}
 }
 
 func (s *productService) GetAllProducts(query repository.ProductQuery) ([]model.Product, int64, error) {
-	return s.productRepo.FindAll(query)
+	if query.IncludeInactive {
+		return s.productRepo.FindAll(query)
+	}
+	key := productListCacheKey(query)
+	var cached cachedProductList
+	if s.cache.GetJSON(key, &cached) {
+		return cached.Products, cached.Total, nil
+	}
+	products, total, err := s.productRepo.FindAll(query)
+	if err == nil {
+		s.cache.SetJSON(key, cachedProductList{Products: products, Total: total}, 2*time.Minute)
+	}
+	return products, total, err
 }
 
 func (s *productService) GetProductByID(id string, includeInactive bool) (*model.Product, error) {
-	return s.productRepo.FindByID(id, includeInactive)
+	if includeInactive {
+		return s.productRepo.FindByID(id, includeInactive)
+	}
+	key := fmt.Sprintf("%sproduct:%s", appcache.CatalogPrefix, id)
+	var cached model.Product
+	if s.cache.GetJSON(key, &cached) {
+		return &cached, nil
+	}
+	product, err := s.productRepo.FindByID(id, false)
+	if err == nil && product != nil {
+		s.cache.SetJSON(key, product, 2*time.Minute)
+	}
+	return product, err
 }
 
 func (s *productService) CreateProduct(product *model.Product) error {
-	return s.productRepo.Create(product)
+	err := s.productRepo.Create(product)
+	if err == nil {
+		s.invalidateCatalog()
+	}
+	return err
 }
 
 func (s *productService) UpdateProduct(product *model.Product) error {
-	return s.productRepo.Update(product)
+	err := s.productRepo.Update(product)
+	if err == nil {
+		s.invalidateCatalog()
+	}
+	return err
 }
 
 func (s *productService) DeleteProduct(id string) error {
-	return s.productRepo.Delete(id)
+	err := s.productRepo.Delete(id)
+	if err == nil {
+		s.invalidateCatalog()
+	}
+	return err
 }
 
 func (s *productService) AdjustStock(productID string, newQuantity int, adminID string, note string) error {
-	return s.productRepo.AdjustStock(productID, newQuantity, adminID, note)
+	err := s.productRepo.AdjustStock(productID, newQuantity, adminID, note)
+	if err == nil {
+		s.invalidateCatalog()
+	}
+	return err
 }
 
 func (s *productService) GetAllCategories() ([]model.Category, error) {
-	return s.productRepo.FindAllCategories()
+	key := appcache.CatalogPrefix + "categories"
+	var cached []model.Category
+	if s.cache.GetJSON(key, &cached) {
+		return cached, nil
+	}
+	categories, err := s.productRepo.FindAllCategories()
+	if err == nil {
+		s.cache.SetJSON(key, categories, 10*time.Minute)
+	}
+	return categories, err
 }
 
 func (s *productService) GetWishlist(userID string) ([]model.Wishlist, error) {
@@ -69,4 +133,13 @@ func (s *productService) AddToWishlist(userID, productID string) error {
 
 func (s *productService) RemoveFromWishlist(userID, productID string) error {
 	return s.productRepo.RemoveFromWishlist(userID, productID)
+}
+
+func (s *productService) invalidateCatalog() {
+	s.cache.DeletePrefix(appcache.CatalogPrefix)
+}
+
+func productListCacheKey(query repository.ProductQuery) string {
+	raw, _ := json.Marshal(query)
+	return fmt.Sprintf("%sproducts:%x", appcache.CatalogPrefix, sha256.Sum256(raw))
 }

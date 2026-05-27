@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Leaf, Lock, Mail } from "lucide-react";
 import api from "@/lib/api";
 import GoogleAuthButton from "@/components/auth/GoogleAuthButton";
+import { Spinner } from "@/components/ui/loading";
 import { useAuthStore } from "@/store/useAuthStore";
 import { motion } from "framer-motion";
 import type { User } from "@/types";
@@ -15,8 +16,13 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isReady, setIsReady] = useState(false);
   const router = useRouter();
   const login = useAuthStore((s) => s.login);
+
+  useEffect(() => {
+    setIsReady(true);
+  }, []);
 
   const isUser = (value: unknown): value is User => {
     if (!value || typeof value !== "object") return false;
@@ -76,14 +82,14 @@ export default function LoginPage() {
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div>
-            <label className="block text-sm font-medium mb-1.5">Email</label>
+            <label htmlFor="login-email" className="block text-sm font-medium mb-1.5">Email</label>
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-white/50 dark:bg-black/50 border border-gray-200 dark:border-gray-800 focus:border-[var(--color-brand-500)] focus:ring-1 focus:ring-[var(--color-brand-500)] rounded-xl outline-none transition-all" placeholder="email@contoh.com" />
+              <input id="login-email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-white/50 dark:bg-black/50 border border-gray-200 dark:border-gray-800 focus:border-[var(--color-brand-500)] focus:ring-1 focus:ring-[var(--color-brand-500)] rounded-xl outline-none transition-all" placeholder="email@contoh.com" />
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1.5">Kata Sandi</label>
+            <label htmlFor="login-password" className="block text-sm font-medium mb-1.5">Kata Sandi</label>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
               <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-white/50 dark:bg-black/50 border border-gray-200 dark:border-gray-800 focus:border-[var(--color-brand-500)] focus:ring-1 focus:ring-[var(--color-brand-500)] rounded-xl outline-none transition-all" placeholder="••••••••" />
@@ -92,7 +98,7 @@ export default function LoginPage() {
               <Link href="/forgot-password" className="text-sm text-[var(--color-brand-600)] font-medium hover:underline">Lupa Kata Sandi?</Link>
             </div>
           </div>
-          <button type="submit" disabled={isLoading} className="w-full py-3 mt-2 bg-black text-white dark:bg-white dark:text-black rounded-xl font-bold disabled:opacity-50 hover:scale-[1.02] transition-transform">{isLoading ? "Memproses..." : "Masuk"}</button>
+          <button type="submit" disabled={!isReady || isLoading} className="w-full py-3 mt-2 bg-black text-white dark:bg-white dark:text-black rounded-xl font-bold disabled:opacity-50 hover:scale-[1.02] transition-transform inline-flex items-center justify-center gap-2">{isLoading && <Spinner className="h-4 w-4" />}{isLoading ? "Memproses..." : "Masuk"}</button>
         </form>
 
         <p className="text-center mt-6 text-sm text-gray-500">Belum memiliki akun? <Link href="/register" className="text-[var(--color-brand-600)] font-bold hover:underline">Daftar Sekarang</Link></p>

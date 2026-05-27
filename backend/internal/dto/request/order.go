@@ -23,6 +23,10 @@ type CheckoutRequest struct {
 	Note                  string   `json:"note"`
 }
 
+type CancelOrderRequest struct {
+	Reason string `json:"reason"`
+}
+
 type MidtransWebhookRequest struct {
 	TransactionTime   string `json:"transaction_time"`
 	TransactionStatus string `json:"transaction_status"`

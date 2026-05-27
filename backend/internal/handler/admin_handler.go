@@ -11,13 +11,16 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"orchidmart-backend/internal/dto/request"
 	"orchidmart-backend/internal/model"
+	"orchidmart-backend/internal/pkg/appcache"
 	"orchidmart-backend/internal/service"
 )
 
 type AdminHandler struct {
 	db           *gorm.DB
 	orderService service.OrderService
+	cache        appcache.Store
 }
 
 type salesPoint struct {
@@ -33,8 +36,12 @@ type topProduct struct {
 	Revenue   float64 `json:"revenue"`
 }
 
-func NewAdminHandler(db *gorm.DB, orderService service.OrderService) *AdminHandler {
-	return &AdminHandler{db: db, orderService: orderService}
+func NewAdminHandler(db *gorm.DB, orderService service.OrderService, stores ...appcache.Store) *AdminHandler {
+	store := appcache.Disabled()
+	if len(stores) > 0 && stores[0] != nil {
+		store = stores[0]
+	}
+	return &AdminHandler{db: db, orderService: orderService, cache: store}
 }
 
 func (h *AdminHandler) GetKPI(c *gin.Context) {
@@ -125,11 +132,6 @@ func (h *AdminHandler) GetAnalyticsOverview(c *gin.Context) {
 		LIMIT 5
 	`, successStatuses).Scan(&topProducts).Error
 
-	var b2bCount int64
-	var b2cCount int64
-	h.db.Model(&model.User{}).Where("role = ? AND customer_type = ?", "customer", "B2B").Count(&b2bCount)
-	h.db.Model(&model.User{}).Where("role = ? AND (customer_type = ? OR customer_type = '')", "customer", "B2C").Count(&b2cCount)
-
 	var lowStockProducts []model.Product
 	_ = h.db.Preload("Inventory").Where("id IN (?)",
 		h.db.Model(&model.Inventory{}).Select("product_id").Where("quantity <= low_stock_threshold").Limit(5),
@@ -153,7 +155,6 @@ func (h *AdminHandler) GetAnalyticsOverview(c *gin.Context) {
 			"sales_series":       salesSeries,
 			"order_statuses":     statusMap,
 			"top_products":       topProducts,
-			"customer_segments":  gin.H{"b2b": b2bCount, "b2c": b2cCount},
 			"low_stock_products": lowStockProducts,
 		},
 	})
@@ -395,6 +396,96 @@ func (h *AdminHandler) RefundOrder(c *gin.Context) {
 	}
 	h.logAdminActivity(c, "REFUND", "order", c.Param("id"), gin.H{"amount": req.Amount, "reason": req.Reason})
 	c.JSON(http.StatusOK, gin.H{"message": "Order refunded"})
+}
+
+func (h *AdminHandler) CancelOrder(c *gin.Context) {
+	var req request.CancelOrderRequest
+	if err := c.ShouldBindJSON(&req); err != nil && !strings.Contains(strings.ToLower(err.Error()), "eof") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	status, err := h.orderService.AdminCancelOrder(c.Param("id"), req.Reason)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	_ = h.createOrderNotification(c.Param("id"), status)
+	h.logAdminActivity(c, "CANCEL_ORDER", "order", c.Param("id"), gin.H{"reason": req.Reason, "result_status": status})
+	c.JSON(http.StatusOK, gin.H{"message": "Order cancellation processed", "data": gin.H{"status": status}})
+}
+
+func (h *AdminHandler) ApproveCancellation(c *gin.Context) {
+	var req request.CancelOrderRequest
+	if err := c.ShouldBindJSON(&req); err != nil && !strings.Contains(strings.ToLower(err.Error()), "eof") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	status, err := h.orderService.ApproveCancellation(c.Param("id"), req.Reason)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	_ = h.createOrderNotification(c.Param("id"), status)
+	h.logAdminActivity(c, "APPROVE_CANCELLATION", "order", c.Param("id"), gin.H{"reason": req.Reason, "result_status": status})
+	c.JSON(http.StatusOK, gin.H{"message": "Cancellation approved", "data": gin.H{"status": status}})
+}
+
+func (h *AdminHandler) RejectCancellation(c *gin.Context) {
+	var req request.CancelOrderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	status, err := h.orderService.RejectCancellation(c.Param("id"), req.Reason)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	_ = h.createOrderNotification(c.Param("id"), status)
+	h.logAdminActivity(c, "REJECT_CANCELLATION", "order", c.Param("id"), gin.H{"reason": req.Reason, "restored_status": status})
+	c.JSON(http.StatusOK, gin.H{"message": "Cancellation rejected", "data": gin.H{"status": status}})
+}
+
+func (h *AdminHandler) ApproveReturn(c *gin.Context) {
+	var req request.CancelOrderRequest
+	if err := c.ShouldBindJSON(&req); err != nil && !strings.Contains(strings.ToLower(err.Error()), "eof") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	status, err := h.orderService.ApproveReturn(c.Param("id"), req.Reason)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	_ = h.createOrderNotification(c.Param("id"), status)
+	h.logAdminActivity(c, "APPROVE_RETURN", "order", c.Param("id"), gin.H{"reason": req.Reason, "result_status": status})
+	c.JSON(http.StatusOK, gin.H{"message": "Return approved", "data": gin.H{"status": status}})
+}
+
+func (h *AdminHandler) RejectReturn(c *gin.Context) {
+	var req request.CancelOrderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	status, err := h.orderService.RejectReturn(c.Param("id"), req.Reason)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	_ = h.createReturnRejectionNotification(c.Param("id"), status, req.Reason)
+	h.logAdminActivity(c, "REJECT_RETURN", "order", c.Param("id"), gin.H{"reason": req.Reason, "restored_status": status})
+	c.JSON(http.StatusOK, gin.H{"message": "Return rejected", "data": gin.H{"status": status}})
 }
 
 func (h *AdminHandler) PrintInvoice(c *gin.Context) {
@@ -712,6 +803,7 @@ func (h *AdminHandler) UpdateInventory(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	h.invalidateCatalog()
 	c.JSON(http.StatusOK, gin.H{"message": "Inventory updated"})
 }
 
@@ -728,6 +820,7 @@ func (h *AdminHandler) CreateCategory(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	h.invalidateCatalog()
 	c.JSON(http.StatusCreated, gin.H{"message": "Category created", "data": category})
 }
 
@@ -751,6 +844,7 @@ func (h *AdminHandler) UpdateCategory(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	h.invalidateCatalog()
 	c.JSON(http.StatusOK, gin.H{"message": "Category updated"})
 }
 
@@ -759,6 +853,7 @@ func (h *AdminHandler) DeleteCategory(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	h.invalidateCatalog()
 	c.JSON(http.StatusOK, gin.H{"message": "Category deleted"})
 }
 
@@ -803,6 +898,7 @@ func (h *AdminHandler) AddProductImage(c *gin.Context) {
 		return
 	}
 
+	h.invalidateCatalog()
 	c.JSON(http.StatusCreated, gin.H{"message": "Product image added", "data": image})
 }
 
@@ -915,6 +1011,7 @@ func (h *AdminHandler) DeleteProductImage(c *gin.Context) {
 		return
 	}
 
+	h.invalidateCatalog()
 	c.JSON(http.StatusOK, gin.H{"message": "Product image deleted"})
 }
 
@@ -948,6 +1045,7 @@ func (h *AdminHandler) SetPrimaryProductImage(c *gin.Context) {
 		return
 	}
 
+	h.invalidateCatalog()
 	c.JSON(http.StatusOK, gin.H{"message": "Primary product image updated"})
 }
 
@@ -974,6 +1072,10 @@ func (h *AdminHandler) logAdminActivity(c *gin.Context, action, entityType, enti
 	_ = h.db.Create(&log).Error
 }
 
+func (h *AdminHandler) invalidateCatalog() {
+	h.cache.DeletePrefix(appcache.CatalogPrefix)
+}
+
 func (h *AdminHandler) createOrderNotification(orderID string, status string) error {
 	var order model.Order
 	if err := h.db.Where("id = ?", orderID).First(&order).Error; err != nil {
@@ -984,6 +1086,30 @@ func (h *AdminHandler) createOrderNotification(orderID string, status string) er
 		UserID:        order.UserID,
 		Type:          "order_status",
 		Title:         title,
+		Message:       message,
+		ReferenceType: "order",
+		ReferenceID:   order.ID,
+	}).Error
+}
+
+func (h *AdminHandler) createReturnRejectionNotification(orderID, restoredStatus, reason string) error {
+	var order model.Order
+	if err := h.db.Where("id = ?", orderID).First(&order).Error; err != nil {
+		return err
+	}
+
+	message := "Pengajuan retur untuk pesanan " + order.OrderNumber + " ditolak admin."
+	if strings.TrimSpace(reason) != "" {
+		message += " Alasan: " + strings.TrimSpace(reason)
+	}
+	if strings.TrimSpace(restoredStatus) != "" {
+		message += " Status pesanan dikembalikan ke " + restoredStatus + "."
+	}
+
+	return h.db.Create(&model.Notification{
+		UserID:        order.UserID,
+		Type:          "order_status",
+		Title:         "Pengajuan retur ditolak",
 		Message:       message,
 		ReferenceType: "order",
 		ReferenceID:   order.ID,
@@ -1002,8 +1128,16 @@ func orderNotificationContent(orderNumber string, status string) (string, string
 		return "Pesanan diterima", "Pesanan " + orderNumber + " sudah ditandai diterima."
 	case "COMPLETED":
 		return "Pesanan selesai", "Pesanan " + orderNumber + " sudah selesai."
+	case "RETURN_REQUESTED":
+		return "Pengajuan retur diterima", "Pengajuan retur untuk pesanan " + orderNumber + " sudah dikirim dan sedang menunggu review admin."
+	case "RETURN_APPROVED":
+		return "Retur disetujui", "Pengajuan retur untuk pesanan " + orderNumber + " disetujui admin dan siap diproses refund."
+	case "CANCELLATION_REQUESTED":
+		return "Pengajuan pembatalan diterima", "Pengajuan pembatalan untuk pesanan " + orderNumber + " sudah dikirim dan sedang menunggu review admin."
 	case "CANCELLED":
 		return "Pesanan dibatalkan", "Pesanan " + orderNumber + " dibatalkan oleh admin."
+	case "REFUNDED":
+		return "Dana dikembalikan", "Pesanan " + orderNumber + " dibatalkan dan dana telah/refund sedang diproses sesuai keputusan admin."
 	default:
 		return "Status pesanan diperbarui", "Status pesanan " + orderNumber + " berubah menjadi " + status + "."
 	}

@@ -7,12 +7,53 @@ type RetriableRequestConfig = InternalAxiosRequestConfig & {
 };
 
 let accessToken: string | null = null;
+const AUTH_REFRESH_EXCLUDED_PATHS = new Set([
+  '/auth/login',
+  '/auth/google',
+  '/auth/register',
+  '/auth/forgot-password',
+  '/auth/reset-password',
+]);
+
+function isLoopbackHost(hostname: string) {
+  return hostname === 'localhost' || hostname === '127.0.0.1';
+}
+
+function shouldUseSameOriginProxy(configuredURL?: string) {
+  if (typeof window === 'undefined') return false;
+  if (isLoopbackHost(window.location.hostname) || window.location.port === '3000') return false;
+  if (!configuredURL) return true;
+  try {
+    const parsed = new URL(configuredURL);
+    return isLoopbackHost(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
 
 function defaultAPIBaseURL() {
-  if (typeof window === 'undefined') return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api/v1';
-  if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
+  const configuredURL = process.env.NEXT_PUBLIC_API_URL;
+  if (typeof window === 'undefined') return configuredURL || 'http://localhost:8080/api/v1';
+  if (shouldUseSameOriginProxy(configuredURL)) return '/api/v1';
+  if (configuredURL) return configuredURL;
   if (window.location.port === '3000') return 'http://localhost:8080/api/v1';
   return '/api/v1';
+}
+
+function normalizeRequestPath(url?: string) {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    try {
+      return new URL(url).pathname;
+    } catch {
+      return url;
+    }
+  }
+  return url.startsWith('/') ? url : `/${url}`;
+}
+
+function shouldSkipRefresh(url?: string) {
+  return AUTH_REFRESH_EXCLUDED_PATHS.has(normalizeRequestPath(url));
 }
 
 export function setAccessToken(token: string | null | undefined) {
@@ -72,6 +113,7 @@ api.interceptors.response.use(
       originalRequest &&
       !originalRequest._retry &&
       originalRequest.url !== '/auth/refresh' &&
+      !shouldSkipRefresh(originalRequest.url) &&
       typeof window !== 'undefined'
     ) {
       originalRequest._retry = true;

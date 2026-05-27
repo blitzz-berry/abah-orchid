@@ -63,6 +63,22 @@ func (r *fakeOrderRepo) ConfirmDelivery(string, string) error {
 	return nil
 }
 
+func (r *fakeOrderRepo) RequestCancellation(string, string, string) error {
+	return nil
+}
+
+func (r *fakeOrderRepo) RejectCancellation(string, string) (string, error) {
+	return "", nil
+}
+
+func (r *fakeOrderRepo) ApproveReturn(string, string) (string, error) {
+	return "", nil
+}
+
+func (r *fakeOrderRepo) RejectReturn(string, string) (string, error) {
+	return "", nil
+}
+
 func (r *fakeOrderRepo) CreateOrUpdatePayment(*model.Payment) error {
 	return nil
 }

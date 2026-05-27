@@ -19,6 +19,10 @@ type OrderRepository interface {
 	GetOrdersByUserID(userID string) ([]model.Order, error)
 	UpdateOrderStatus(orderID, status string) error
 	ConfirmDelivery(orderID, userID string) error
+	RequestCancellation(orderID, userID, reason string) error
+	RejectCancellation(orderID, reason string) (string, error)
+	ApproveReturn(orderID, reason string) (string, error)
+	RejectReturn(orderID, reason string) (string, error)
 	CreateOrUpdatePayment(payment *model.Payment) error
 	GetPaymentByOrderID(orderID string) (*model.Payment, error)
 	CompletePaymentWithTx(payment *model.Payment) error
@@ -107,7 +111,7 @@ func (r *orderRepository) CreateOrderFromCartItemsWithTx(order *model.Order, car
 
 func (r *orderRepository) GetOrderByID(id string) (*model.Order, error) {
 	var order model.Order
-	err := r.db.Preload("Items").Preload("Payments").Preload("User").Where("id = ?", id).First(&order).Error
+	err := r.db.Preload("Items").Preload("Payments").Preload("StatusHistory").Preload("User").Where("id = ?", id).First(&order).Error
 	if err == nil {
 		err = r.hydrateOrderItemImages([]*model.Order{&order})
 	}
@@ -116,7 +120,7 @@ func (r *orderRepository) GetOrderByID(id string) (*model.Order, error) {
 
 func (r *orderRepository) GetOrderByIDForUser(id, userID string) (*model.Order, error) {
 	var order model.Order
-	err := r.db.Preload("Items").Preload("Payments").Preload("User").Where("id = ? AND user_id = ?", id, userID).First(&order).Error
+	err := r.db.Preload("Items").Preload("Payments").Preload("StatusHistory").Preload("User").Where("id = ? AND user_id = ?", id, userID).First(&order).Error
 	if err == nil {
 		err = r.hydrateOrderItemImages([]*model.Order{&order})
 	}
@@ -259,6 +263,75 @@ func (r *orderRepository) ConfirmDelivery(orderID, userID string) error {
 	})
 }
 
+func (r *orderRepository) RequestCancellation(orderID, userID, reason string) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var order model.Order
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND user_id = ?", orderID, userID).
+			First(&order).Error; err != nil {
+			return err
+		}
+		if order.Status != "PAID" && order.Status != "PROCESSING" {
+			return errors.New("cancellation request is only available for paid or processing orders")
+		}
+
+		now := time.Now()
+		if err := tx.Model(&model.Order{}).Where("id = ?", order.ID).Updates(map[string]interface{}{
+			"status":                             "CANCELLATION_REQUESTED",
+			"cancellation_reason":                reason,
+			"cancellation_source":                "customer",
+			"cancellation_requested_at":          &now,
+			"cancellation_requested_from_status": order.Status,
+			"cancellation_rejected_reason":       "",
+		}).Error; err != nil {
+			return err
+		}
+
+		return tx.Create(&model.OrderStatusHistory{
+			OrderID:    order.ID,
+			FromStatus: order.Status,
+			ToStatus:   "CANCELLATION_REQUESTED",
+			Note:       reason,
+		}).Error
+	})
+}
+
+func (r *orderRepository) RejectCancellation(orderID, reason string) (string, error) {
+	var restoredStatus string
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		var order model.Order
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", orderID).
+			First(&order).Error; err != nil {
+			return err
+		}
+		if order.Status != "CANCELLATION_REQUESTED" {
+			return errors.New("order is not waiting for cancellation review")
+		}
+
+		restoredStatus = strings.TrimSpace(order.CancellationRequestedFromStatus)
+		if restoredStatus == "" {
+			restoredStatus = "PAID"
+		}
+
+		if err := tx.Model(&model.Order{}).Where("id = ?", order.ID).Updates(map[string]interface{}{
+			"status":                             restoredStatus,
+			"cancellation_rejected_reason":       reason,
+			"cancellation_requested_from_status": "",
+		}).Error; err != nil {
+			return err
+		}
+
+		return tx.Create(&model.OrderStatusHistory{
+			OrderID:    order.ID,
+			FromStatus: order.Status,
+			ToStatus:   restoredStatus,
+			Note:       "Cancellation rejected: " + reason,
+		}).Error
+	})
+	return restoredStatus, err
+}
+
 func (r *orderRepository) CreateOrUpdatePayment(payment *model.Payment) error {
 	var existing model.Payment
 	err := r.db.Where("order_id = ?", payment.OrderID).First(&existing).Error
@@ -390,6 +463,11 @@ func (r *orderRepository) CancelOrderWithTx(orderID, reason string) error {
 		}).Error; err != nil {
 			return err
 		}
+		if order.Status == "PENDING_PAYMENT" {
+			if err := releaseCouponUsage(tx, order.CouponCode); err != nil {
+				return err
+			}
+		}
 
 		if shouldRestore {
 			for _, item := range order.Items {
@@ -423,6 +501,16 @@ func (r *orderRepository) CancelOrderWithTx(orderID, reason string) error {
 	})
 }
 
+func releaseCouponUsage(tx *gorm.DB, code string) error {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return nil
+	}
+	return tx.Model(&model.Coupon{}).
+		Where("LOWER(code) = LOWER(?) AND used_count > 0", code).
+		UpdateColumn("used_count", gorm.Expr("used_count - 1")).Error
+}
+
 func (r *orderRepository) ExpirePendingPayments(now time.Time) (int64, error) {
 	var payments []model.Payment
 	if err := r.db.Where("status IN ? AND expired_at IS NOT NULL AND expired_at <= ?", []string{"PENDING", "WAITING_PROOF"}, now).Find(&payments).Error; err != nil {
@@ -452,9 +540,12 @@ func (r *orderRepository) RequestReturn(orderID, userID, reason string) error {
 		}
 		now := time.Now()
 		if err := tx.Model(&model.Order{}).Where("id = ?", order.ID).Updates(map[string]interface{}{
-			"status":              "RETURN_REQUESTED",
-			"return_reason":       reason,
-			"return_requested_at": &now,
+			"status":                        "RETURN_REQUESTED",
+			"return_reason":                 reason,
+			"return_requested_at":           &now,
+			"return_requested_from_status":  order.Status,
+			"return_rejected_reason":        "",
+			"return_approved_at":            nil,
 		}).Error; err != nil {
 			return err
 		}
@@ -467,13 +558,86 @@ func (r *orderRepository) RequestReturn(orderID, userID, reason string) error {
 	})
 }
 
+func (r *orderRepository) ApproveReturn(orderID, reason string) (string, error) {
+	var nextStatus string
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		var order model.Order
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", orderID).
+			First(&order).Error; err != nil {
+			return err
+		}
+		if order.Status != "RETURN_REQUESTED" {
+			return errors.New("order is not waiting for return review")
+		}
+
+		now := time.Now()
+		nextStatus = "RETURN_APPROVED"
+		if err := tx.Model(&model.Order{}).Where("id = ?", order.ID).Updates(map[string]interface{}{
+			"status":             nextStatus,
+			"return_approved_at": &now,
+			"return_rejected_reason": "",
+		}).Error; err != nil {
+			return err
+		}
+
+		note := strings.TrimSpace(reason)
+		if note == "" {
+			note = "Return approved by admin"
+		}
+		return tx.Create(&model.OrderStatusHistory{
+			OrderID:    order.ID,
+			FromStatus: order.Status,
+			ToStatus:   nextStatus,
+			Note:       note,
+		}).Error
+	})
+	return nextStatus, err
+}
+
+func (r *orderRepository) RejectReturn(orderID, reason string) (string, error) {
+	var restoredStatus string
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		var order model.Order
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", orderID).
+			First(&order).Error; err != nil {
+			return err
+		}
+		if order.Status != "RETURN_REQUESTED" {
+			return errors.New("order is not waiting for return review")
+		}
+
+		restoredStatus = strings.TrimSpace(order.ReturnRequestedFromStatus)
+		if restoredStatus == "" {
+			restoredStatus = "COMPLETED"
+		}
+
+		if err := tx.Model(&model.Order{}).Where("id = ?", order.ID).Updates(map[string]interface{}{
+			"status":                       restoredStatus,
+			"return_rejected_reason":       reason,
+			"return_requested_from_status": "",
+		}).Error; err != nil {
+			return err
+		}
+
+		return tx.Create(&model.OrderStatusHistory{
+			OrderID:    order.ID,
+			FromStatus: order.Status,
+			ToStatus:   restoredStatus,
+			Note:       "Return rejected: " + reason,
+		}).Error
+	})
+	return restoredStatus, err
+}
+
 func (r *orderRepository) RefundOrder(orderID, reason string, amount float64) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		var order model.Order
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Preload("Items").Where("id = ?", orderID).First(&order).Error; err != nil {
 			return err
 		}
-		if order.Status != "RETURN_REQUESTED" && order.Status != "PAID" && order.Status != "PROCESSING" {
+		if order.Status != "RETURN_REQUESTED" && order.Status != "RETURN_APPROVED" && order.Status != "PAID" && order.Status != "PROCESSING" && order.Status != "CANCELLATION_REQUESTED" {
 			return errors.New("order is not eligible for refund")
 		}
 		if amount <= 0 || amount > order.Total {

@@ -22,7 +22,7 @@ const products = [
     },
     {
         name: 'Bibit Dendrobium Spectabile (Botolan)',
-        description: 'Bibit anggrek unik keriting. Dijual dalam bentuk botolan kultur jaringan yang steril. Satu botol berisi +- 25 hingga 30 bibit nener ukuran 1-2 cm. Sangat cocok bagi petani anggrek pembibitan (B2B).',
+        description: 'Bibit anggrek unik keriting. Dijual dalam bentuk botolan kultur jaringan yang steril. Satu botol berisi +- 25 hingga 30 bibit nener ukuran 1-2 cm. Sangat cocok bagi petani anggrek pembibitan dan kebutuhan restock nursery.',
         price: 320000,
         unit_type: 'PER_BATCH',
         stock: 100

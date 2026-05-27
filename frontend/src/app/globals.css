@@ -1,6 +1,9 @@
 @import "tailwindcss";
 
 @theme {
+  --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-display), Georgia, serif;
+
   --color-brand-50: #fdf4ff;
   --color-brand-100: #fae8ff;
   --color-brand-200: #f5d0fe;
@@ -91,6 +94,24 @@
     background-color: var(--bg);
     color: var(--fg);
     @apply antialiased;
+  }
+
+  h1,
+  h2,
+  .font-display {
+    font-family: var(--font-display), Georgia, serif;
+    letter-spacing: 0;
+  }
+
+  h3,
+  h4,
+  h5,
+  h6,
+  button,
+  input,
+  select,
+  textarea {
+    letter-spacing: 0;
   }
 }
 

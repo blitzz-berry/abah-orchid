@@ -122,31 +122,33 @@ func (r *fakeUserRepo) RevokeRefreshTokensForUser(userID string) error {
 func TestAuthServiceRegisterHashesPasswordAndRejectsDuplicateEmail(t *testing.T) {
 	repo := newFakeUserRepo()
 	svc := NewAuthService(repo)
+	password := uuid.NewString()
 
-	user, err := svc.Register(" Buyer@Example.COM ", "secret123", "Buyer", "081234")
+	user, err := svc.Register(" Buyer@Example.COM ", password, "Buyer", "081234")
 	if err != nil {
 		t.Fatalf("Register() error = %v", err)
 	}
 	if user.Email != "buyer@example.com" {
 		t.Fatalf("Register() stored email = %q, want normalized lowercase email", user.Email)
 	}
-	if user.PasswordHash == "secret123" {
+	if user.PasswordHash == password {
 		t.Fatal("Register() stored plaintext password")
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte("secret123")); err != nil {
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
 		t.Fatalf("registered password hash does not match original password: %v", err)
 	}
 
-	if _, err := svc.Register("buyer@example.com", "secret123", "Other", "080000"); err == nil {
+	if _, err := svc.Register("buyer@example.com", password, "Other", "080000"); err == nil {
 		t.Fatal("Register() expected duplicate email error")
 	}
 }
 
 func TestAuthServiceLoginAndRefreshRotateRefreshToken(t *testing.T) {
-	t.Setenv("JWT_SECRET", "test-jwt-secret-at-least-32-characters")
+	t.Setenv("JWT_SECRET", uuid.NewString()+uuid.NewString())
 
 	repo := newFakeUserRepo()
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte("secret123"), 12)
+	password := uuid.NewString()
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), 12)
 	if err != nil {
 		t.Fatalf("GenerateFromPassword() error = %v", err)
 	}
@@ -162,11 +164,12 @@ func TestAuthServiceLoginAndRefreshRotateRefreshToken(t *testing.T) {
 	repo.usersByEmail[user.Email] = user
 
 	svc := NewAuthService(repo)
-	if _, _, _, err := svc.Login(user.Email, "wrong-password"); err == nil {
+	wrongPassword := uuid.NewString()
+	if _, _, _, err := svc.Login(user.Email, wrongPassword); err == nil {
 		t.Fatal("Login() expected invalid password error")
 	}
 
-	_, accessToken, refreshToken, err := svc.Login(user.Email, "secret123")
+	_, accessToken, refreshToken, err := svc.Login(user.Email, password)
 	if err != nil {
 		t.Fatalf("Login() error = %v", err)
 	}
@@ -200,24 +203,26 @@ func TestAuthServiceResetPasswordUsesTokenOnce(t *testing.T) {
 	repo := newFakeUserRepo()
 	user := &model.User{ID: uuid.New(), Email: "buyer@example.com", IsActive: true}
 	repo.usersByID[user.ID.String()] = user
+	token := uuid.NewString()
 	repo.passwordReset = &model.PasswordReset{
 		UserID:    user.ID,
-		Token:     "reset-token",
+		Token:     token,
 		ExpiresAt: time.Now().Add(time.Hour),
 	}
 
 	svc := NewAuthService(repo)
-	if err := svc.ResetPassword("reset-token", "new-secret123"); err != nil {
+	newPassword := uuid.NewString()
+	if err := svc.ResetPassword(token, newPassword); err != nil {
 		t.Fatalf("ResetPassword() error = %v", err)
 	}
 	if !repo.passwordReset.IsUsed {
 		t.Fatal("ResetPassword() did not mark token as used")
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte("new-secret123")); err != nil {
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(newPassword)); err != nil {
 		t.Fatalf("ResetPassword() did not store matching password hash: %v", err)
 	}
 
-	if err := svc.ResetPassword("reset-token", "another-secret123"); err == nil {
+	if err := svc.ResetPassword(token, uuid.NewString()); err == nil {
 		t.Fatal("ResetPassword() accepted an already used reset token")
 	}
 }
@@ -226,14 +231,15 @@ func TestAuthServiceResetPasswordRejectsExpiredToken(t *testing.T) {
 	repo := newFakeUserRepo()
 	user := &model.User{ID: uuid.New(), Email: "buyer@example.com", IsActive: true}
 	repo.usersByID[user.ID.String()] = user
+	token := uuid.NewString()
 	repo.passwordReset = &model.PasswordReset{
 		UserID:    user.ID,
-		Token:     "expired-reset-token",
+		Token:     token,
 		ExpiresAt: time.Now().Add(-time.Minute),
 	}
 
 	svc := NewAuthService(repo)
-	if err := svc.ResetPassword("expired-reset-token", "new-secret123"); err == nil {
+	if err := svc.ResetPassword(token, uuid.NewString()); err == nil {
 		t.Fatal("ResetPassword() accepted an expired reset token")
 	}
 	if repo.passwordReset.IsUsed {

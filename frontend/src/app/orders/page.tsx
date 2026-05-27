@@ -8,6 +8,7 @@ import { motion } from "framer-motion";
 import { useAuthStore } from "@/store/useAuthStore";
 import Navbar from "@/components/ui/Navbar";
 import Footer from "@/components/ui/Footer";
+import { OrderListSkeleton, Skeleton } from "@/components/ui/loading";
 import api from "@/lib/api";
 import { resolveUploadURL } from "@/lib/uploads";
 import type { Order } from "@/types";
@@ -16,11 +17,13 @@ const STATUS_MAP: Record<string, { label: string; color: string; icon: any }> = 
   PENDING_PAYMENT: { label: "Menunggu Bayar", color: "text-amber-600 bg-amber-50 dark:bg-amber-900/20", icon: Clock },
   PAID: { label: "Dibayar", color: "text-blue-600 bg-blue-50 dark:bg-blue-900/20", icon: CheckCircle },
   PROCESSING: { label: "Diproses", color: "text-purple-600 bg-purple-50 dark:bg-purple-900/20", icon: Package },
+  CANCELLATION_REQUESTED: { label: "Menunggu Review Batal", color: "text-rose-600 bg-rose-50 dark:bg-rose-900/20", icon: RotateCcw },
   SHIPPED: { label: "Dikirim", color: "text-cyan-600 bg-cyan-50 dark:bg-cyan-900/20", icon: Truck },
   DELIVERED: { label: "Diterima", color: "text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20", icon: CheckCircle },
   COMPLETED: { label: "Selesai", color: "text-green-600 bg-green-50 dark:bg-green-900/20", icon: CheckCircle },
   CANCELLED: { label: "Dibatalkan", color: "text-red-600 bg-red-50 dark:bg-red-900/20", icon: XCircle },
   RETURN_REQUESTED: { label: "Retur", color: "text-orange-600 bg-orange-50 dark:bg-orange-900/20", icon: Package },
+  RETURN_APPROVED: { label: "Retur Disetujui", color: "text-lime-700 bg-lime-50 dark:bg-lime-900/20", icon: RotateCcw },
   REFUNDED: { label: "Dana Dikembalikan", color: "text-gray-600 bg-gray-50 dark:bg-gray-800", icon: XCircle },
 };
 
@@ -29,8 +32,10 @@ const FILTERS = [
   { value: "PENDING_PAYMENT", label: "Belum Bayar" },
   { value: "PAID", label: "Dibayar" },
   { value: "PROCESSING", label: "Diproses" },
+  { value: "CANCELLATION_REQUESTED", label: "Permintaan Batal" },
   { value: "SHIPPED", label: "Dikirim" },
   { value: "COMPLETED", label: "Selesai" },
+  { value: "RETURN_APPROVED", label: "Retur Disetujui" },
   { value: "CANCELLED", label: "Batal" },
 ];
 
@@ -85,9 +90,19 @@ export default function OrdersPage() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <SummaryCard label="Total Pesanan" value={orders.length} />
-            <SummaryCard label="Sedang Berjalan" value={activeOrders} tone="brand" />
-            <SummaryCard label="Menunggu Bayar" value={pendingPayment} tone="amber" />
+            {isLoading ? (
+              <>
+                <SummaryCardSkeleton />
+                <SummaryCardSkeleton />
+                <SummaryCardSkeleton />
+              </>
+            ) : (
+              <>
+                <SummaryCard label="Total Pesanan" value={orders.length} />
+                <SummaryCard label="Sedang Berjalan" value={activeOrders} tone="brand" />
+                <SummaryCard label="Menunggu Bayar" value={pendingPayment} tone="amber" />
+              </>
+            )}
           </div>
 
           <div className="flex flex-col lg:flex-row gap-3 lg:items-center lg:justify-between">
@@ -106,7 +121,7 @@ export default function OrdersPage() {
         </div>
 
         {isLoading ? (
-          <div className="flex justify-center py-20"><div className="w-10 h-10 border-4 border-gray-200 border-t-[var(--color-leaf-500)] rounded-full animate-spin" /></div>
+          <OrderListSkeleton />
         ) : orders.length === 0 ? (
           <div className="text-center py-20 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-zinc-900">
             <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
@@ -133,6 +148,15 @@ export default function OrdersPage() {
         )}
       </main>
       <Footer />
+    </div>
+  );
+}
+
+function SummaryCardSkeleton() {
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-zinc-900">
+      <Skeleton className="h-4 w-28" />
+      <Skeleton className="mt-3 h-8 w-16" />
     </div>
   );
 }
@@ -234,9 +258,13 @@ function nextStepText(orderStatus: string, paymentStatus?: string) {
   }
   if (orderStatus === "PAID") return "Pembayaran sudah diterima, pesanan menunggu diproses.";
   if (orderStatus === "PROCESSING") return "Pesanan sedang disiapkan oleh admin.";
+  if (orderStatus === "CANCELLATION_REQUESTED") return "Pengajuan pembatalan sedang ditinjau admin.";
   if (orderStatus === "SHIPPED") return "Pesanan sedang dalam pengiriman.";
   if (orderStatus === "DELIVERED") return "Konfirmasi apabila pesanan sudah Anda terima.";
   if (orderStatus === "COMPLETED") return "Pesanan selesai. Anda dapat memberikan ulasan produk.";
+  if (orderStatus === "RETURN_REQUESTED") return "Pengajuan retur Anda sedang ditinjau admin.";
+  if (orderStatus === "RETURN_APPROVED") return "Retur disetujui admin dan siap diproses refund.";
+  if (orderStatus === "REFUNDED") return "Refund untuk pesanan ini sudah diproses.";
   if (orderStatus === "CANCELLED") return "Pesanan ini sudah dibatalkan.";
   return "Lihat detail pesanan untuk informasi lengkap.";
 }

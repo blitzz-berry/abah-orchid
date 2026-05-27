@@ -31,7 +31,7 @@ func InitDB() {
 		host = "localhost"
 		port = "5432"
 		user = "orchidmart"
-		password = "secretpassword"
+		password = ""
 		dbname = "orchidmart"
 	}
 
@@ -86,8 +86,23 @@ func InitDB() {
 		log.Fatalf("Failed to auto-migrate. \nError: %v", err)
 	}
 
+	dropLegacyCustomerTypeColumn()
 	ensureDefaultAdmin()
 	log.Println("Auto migrations completed successfully")
+}
+
+func dropLegacyCustomerTypeColumn() {
+	if DB == nil {
+		return
+	}
+	if !DB.Migrator().HasColumn(&model.User{}, "customer_type") {
+		return
+	}
+	if err := DB.Migrator().DropColumn(&model.User{}, "customer_type"); err != nil {
+		log.Printf("Failed to drop legacy users.customer_type column: %v", err)
+		return
+	}
+	log.Println("Dropped legacy users.customer_type column")
 }
 
 func postgresDSN(host, port, user, password, dbname string) (string, error) {
@@ -226,7 +241,6 @@ func ensureDefaultAdmin() {
 			PasswordHash: string(hashedPassword),
 			FullName:     adminName,
 			Role:         "admin",
-			CustomerType: "B2B",
 			IsActive:     true,
 		}
 
@@ -248,10 +262,6 @@ func ensureDefaultAdmin() {
 	}
 	if !user.IsActive {
 		updates["is_active"] = true
-		needsUpdate = true
-	}
-	if user.CustomerType != "B2B" {
-		updates["customer_type"] = "B2B"
 		needsUpdate = true
 	}
 	if hasAdminName && user.FullName != adminName {
@@ -300,8 +310,7 @@ func enforceExclusiveAdmin(adminEmail string) {
 	if err := DB.Model(&model.User{}).
 		Where("id IN ?", oldAdminIDs).
 		Updates(map[string]any{
-			"role":          "customer",
-			"customer_type": "B2C",
+			"role": "customer",
 		}).Error; err != nil {
 		log.Fatalf("Failed to demote old admin accounts. \nError: %v", err)
 	}

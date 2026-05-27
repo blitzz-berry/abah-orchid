@@ -14,7 +14,6 @@ type User struct {
 	FullName     string         `gorm:"type:varchar(255);not null" json:"full_name"`
 	Phone        string         `gorm:"type:varchar(20)" json:"phone"`
 	Role         string         `gorm:"type:varchar(20);default:'customer'" json:"role"`
-	CustomerType string         `gorm:"type:varchar(10);default:'B2C'" json:"customer_type"`
 	IsActive     bool           `gorm:"default:true" json:"is_active"`
 	AvatarURL    string         `gorm:"type:varchar(500)" json:"avatar_url"`
 	LastLoginAt  *time.Time     `json:"last_login_at"`

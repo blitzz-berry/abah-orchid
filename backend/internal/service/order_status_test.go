@@ -9,7 +9,8 @@ func TestCanTransitionOrder(t *testing.T) {
 		{"SHIPPED", "DELIVERED"},
 		{"DELIVERED", "COMPLETED"},
 		{"PENDING_PAYMENT", "CANCELLED"},
-		{"RETURN_REQUESTED", "REFUNDED"},
+		{"RETURN_REQUESTED", "RETURN_APPROVED"},
+		{"RETURN_APPROVED", "REFUNDED"},
 	}
 	for _, pair := range allowed {
 		if !canTransitionOrder(pair[0], pair[1]) {

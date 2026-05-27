@@ -4,11 +4,12 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import api from "@/lib/api";
-import { ShoppingCart, Info, CheckCircle2, Tag, Leaf, Ruler, Flower2, Weight, Heart, Star, ArrowRight } from "lucide-react";
+import { ShoppingCart, Info, CheckCircle2, Leaf, Ruler, Flower2, Weight, Heart, Star, ArrowRight } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { motion } from "framer-motion";
 import Navbar from "@/components/ui/Navbar";
 import Footer from "@/components/ui/Footer";
+import { ProductGridSkeleton, Skeleton, Spinner } from "@/components/ui/loading";
 import { cartErrorMessage } from "@/lib/cart-errors";
 import { resolveUploadURL } from "@/lib/uploads";
 import type { Product, Review } from "@/types";
@@ -118,7 +119,9 @@ export default function ProductDetailPage() {
     return (
       <div className="flex flex-col min-h-screen bg-[var(--bg)]">
         <Navbar />
-        <div className="flex-1 flex items-center justify-center"><div className="w-12 h-12 border-4 border-gray-200 border-t-[var(--color-leaf-500)] rounded-full animate-spin" /></div>
+        <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 pt-24 pb-16">
+          <ProductDetailSkeleton />
+        </main>
       </div>
     );
   }
@@ -155,9 +158,6 @@ export default function ProductDetailPage() {
         <div className="flex flex-col lg:flex-row gap-10">
           <div className="w-full lg:w-1/2">
             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="glass p-2 rounded-3xl aspect-square overflow-hidden relative bg-white/50 dark:bg-black/50">
-              {product.unit_type === "PER_BATCH" && (
-                <div className="absolute top-4 left-4 z-10 bg-[var(--color-leaf-500)] text-white text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 shadow-lg"><Tag className="w-3 h-3" /> Grosir (B2B)</div>
-              )}
               <img src={imgUrl} alt={product.name} className="w-full h-full object-cover rounded-2xl" />
             </motion.div>
             {product.images && product.images.length > 1 && (
@@ -249,7 +249,7 @@ export default function ProductDetailPage() {
                 <Heart className={`w-5 h-5 ${wishlisted ? "fill-current" : ""}`} /> {wishlisted ? "Hapus dari Wishlist" : "Simpan ke Wishlist"}
               </button>
               <button onClick={handleAddToCart} disabled={isAdding || stock < 1} className="w-full py-3.5 bg-black text-white dark:bg-white dark:text-black rounded-xl font-bold flex items-center justify-center gap-2 hover:scale-[1.02] transition-transform disabled:opacity-50 shadow-lg">
-                <ShoppingCart className="w-5 h-5" /> {stock < 1 ? "Stok Habis" : isAdding ? "Memproses..." : "Masukkan Keranjang"}
+                {isAdding ? <Spinner /> : <ShoppingCart className="w-5 h-5" />} {stock < 1 ? "Stok Habis" : isAdding ? "Memproses..." : "Masukkan Keranjang"}
               </button>
             </motion.div>
           </div>
@@ -279,6 +279,40 @@ export default function ProductDetailPage() {
   );
 }
 
+function ProductDetailSkeleton() {
+  return (
+    <div className="space-y-12">
+      <div className="mb-6 flex items-center gap-2">
+        <Skeleton className="h-4 w-14" />
+        <Skeleton className="h-4 w-20" />
+        <Skeleton className="h-4 w-32" />
+      </div>
+      <div className="flex flex-col gap-10 lg:flex-row">
+        <div className="w-full lg:w-1/2">
+          <Skeleton className="aspect-square rounded-3xl" />
+          <div className="mt-3 flex gap-2">
+            {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-16 w-16 rounded-xl" />)}
+          </div>
+        </div>
+        <div className="w-full space-y-6 lg:w-1/2">
+          <div>
+            <Skeleton className="mb-3 h-4 w-40" />
+            <Skeleton className="mb-3 h-10 w-4/5" />
+            <Skeleton className="h-5 w-48" />
+          </div>
+          <Skeleton className="h-16 w-full rounded-xl" />
+          <div className="grid grid-cols-2 gap-3">
+            {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-14 rounded-xl" />)}
+          </div>
+          <Skeleton className="h-36 rounded-2xl" />
+          <Skeleton className="h-64 rounded-2xl" />
+        </div>
+      </div>
+      <ProductGridSkeleton count={4} />
+    </div>
+  );
+}
+
 function ProductSuggestionCard({ product, idx }: { product: Product; idx: number }) {
   const imageURL = productImageURL(product);
   const stock = product.inventory?.quantity || 0;
@@ -288,7 +322,6 @@ function ProductSuggestionCard({ product, idx }: { product: Product; idx: number
       <Link href={`/products/${product.id}`} className="group block rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-zinc-900 overflow-hidden hover:shadow-lg transition-shadow h-full">
         <div className="aspect-square bg-gray-100 dark:bg-gray-800 overflow-hidden relative">
           <img src={imageURL} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-          {product.unit_type === "PER_BATCH" && <span className="absolute top-3 left-3 bg-[var(--color-leaf-500)] text-white text-[10px] font-bold px-2 py-1 rounded-md">B2B</span>}
         </div>
         <div className="p-4">
           <div className="text-xs text-gray-500 mb-1 truncate">{product.category?.name || "Anggrek"}</div>

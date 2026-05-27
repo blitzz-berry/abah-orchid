@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Heart, ShoppingCart, Trash2 } from "lucide-react";
 import Navbar from "@/components/ui/Navbar";
 import Footer from "@/components/ui/Footer";
+import { ProductGridSkeleton, Spinner } from "@/components/ui/loading";
 import api from "@/lib/api";
 import { cartErrorMessage } from "@/lib/cart-errors";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -70,7 +71,7 @@ export default function WishlistPage() {
       <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 lg:px-8 pt-24 pb-16">
         <h1 className="text-3xl font-extrabold tracking-tight mb-8">Wishlist Saya</h1>
         {isLoading ? (
-          <div className="flex justify-center py-20"><div className="w-10 h-10 border-4 border-gray-200 border-t-[var(--color-leaf-500)] rounded-full animate-spin" /></div>
+          <ProductGridSkeleton count={4} />
         ) : items.length === 0 ? (
           <div className="text-center py-20 glass rounded-3xl">
             <Heart className="w-16 h-16 text-gray-300 mx-auto mb-4" />
@@ -98,7 +99,7 @@ export default function WishlistPage() {
                     className="p-2 rounded-lg bg-black text-white dark:bg-white dark:text-black disabled:opacity-50"
                     title={addedProductId === (item.product_id || item.product.id) ? "Sudah masuk keranjang" : "Masukkan ke keranjang"}
                   >
-                    <ShoppingCart className="w-4 h-4" />
+                    {addingProductId === (item.product_id || item.product.id) ? <Spinner className="w-4 h-4" /> : <ShoppingCart className="w-4 h-4" />}
                   </button>
                   <button onClick={() => handleRemove(item.product_id)} className="p-2 rounded-lg bg-red-50 text-red-600">
                     <Trash2 className="w-4 h-4" />

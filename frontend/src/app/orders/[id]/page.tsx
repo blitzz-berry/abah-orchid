@@ -3,14 +3,15 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Package, Truck, MapPin, CreditCard, CheckCircle, Star, Upload, ExternalLink, Clock } from "lucide-react";
+import { ArrowLeft, Package, Truck, MapPin, CreditCard, CheckCircle, Star, Upload, ExternalLink, Clock, RotateCcw } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import Navbar from "@/components/ui/Navbar";
 import Footer from "@/components/ui/Footer";
 import api from "@/lib/api";
 import { openUploadURL, resolveUploadURL } from "@/lib/uploads";
+import { OrderListSkeleton, Skeleton, Spinner } from "@/components/ui/loading";
 import { motion } from "framer-motion";
-import type { Order, Payment } from "@/types";
+import type { Order, OrderStatusHistory, Payment } from "@/types";
 
 type ReviewDraft = {
   rating: number;
@@ -20,6 +21,11 @@ type ReviewDraft = {
 
 const MAX_PAYMENT_PROOF_SIZE = 10 * 1024 * 1024;
 const ACCEPTED_PAYMENT_PROOF_TYPES = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
+
+const readApiError = (error: any, fallback: string) => {
+  const message = error?.response?.data?.error;
+  return typeof message === "string" && message.trim() ? message : fallback;
+};
 
 export default function OrderDetailPage() {
   const { id } = useParams();
@@ -31,6 +37,10 @@ export default function OrderDetailPage() {
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [isUploadingProof, setIsUploadingProof] = useState(false);
   const [reviewForms, setReviewForms] = useState<Record<string, ReviewDraft>>({});
+  const [returnReason, setReturnReason] = useState("");
+  const [isSubmittingReturn, setIsSubmittingReturn] = useState(false);
+  const [cancellationReason, setCancellationReason] = useState("");
+  const [isSubmittingCancellation, setIsSubmittingCancellation] = useState(false);
   const proofInputRef = useRef<HTMLInputElement | null>(null);
   const { isAuthenticated } = useAuthStore();
 
@@ -64,13 +74,22 @@ export default function OrderDetailPage() {
   const isManualTransfer = activePayment?.method === "manual_bank_transfer" || activePayment?.method === "bank_transfer";
   const isMidtransPayment = activePayment?.provider === "midtrans";
   const canUploadProof = order?.status === "PENDING_PAYMENT" && isManualTransfer && ["PENDING", "WAITING_PROOF"].includes(activePayment?.status || "");
+  const canRequestReturn = order?.status === "DELIVERED" || order?.status === "COMPLETED";
+  const canCancelDirectly = order?.status === "PENDING_PAYMENT";
+  const canRequestCancellation = order?.status === "PAID" || order?.status === "PROCESSING";
   const proofImageURL = activePayment?.proof_image_url ? resolveUploadURL(activePayment.proof_image_url) : "";
   const proofUploadMessage = getProofUploadMessage(order?.status || "", activePayment);
+  const orderID = typeof id === "string" ? id : Array.isArray(id) ? id[0] : "";
+  const sortedStatusHistory = [...(order?.status_history || [])].sort((a, b) => {
+    const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+    return bTime - aTime;
+  });
 
   const handleConfirmDelivery = async () => {
     setIsConfirming(true);
     try {
-      await api.post(`/orders/${id}/confirm-delivery`);
+      await api.post(`/orders/${orderID}/confirm-delivery`);
       setOrder((prev) => prev ? { ...prev, status: "COMPLETED" } : prev);
     } catch (e: any) {
       alert("Gagal: " + (e.response?.data?.error || e.message));
@@ -99,7 +118,7 @@ export default function OrderDetailPage() {
     }
     try {
       await api.post("/reviews", {
-        order_id: id,
+        order_id: orderID,
         product_id: productID,
         rating: form.rating,
         comment: form.comment,
@@ -144,7 +163,7 @@ export default function OrderDetailPage() {
     setProofFile(file);
     setIsUploadingProof(true);
     try {
-      const response = await api.post(`/payments/${order.id}/upload-proof-file`, payload);
+      const response = await api.post(`/payments/${orderID || order.id}/upload-proof-file`, payload);
       setPayment(response.data.data?.payment || response.data.data || null);
       setProofFile(null);
       event.target.value = "";
@@ -159,11 +178,11 @@ export default function OrderDetailPage() {
   const handleContinuePayment = async () => {
     if (!order) return;
     try {
-      const response = await api.post(`/payments/${order.id}/pay`);
+      const response = await api.post(`/payments/${orderID || order.id}/pay`);
       const paymentURL = response.data.payment_url || response.data.data?.payment_url;
       if (paymentURL) window.location.href = paymentURL;
     } catch (e: any) {
-      alert("Gagal membuka pembayaran: " + (e.response?.data?.error || e.message));
+      alert(readApiError(e, "Gagal membuka halaman pembayaran. Silakan coba lagi."));
     }
   };
 
@@ -176,13 +195,72 @@ export default function OrderDetailPage() {
     }
   };
 
+  const handleRequestReturn = async () => {
+    if (!order || !canRequestReturn || isSubmittingReturn) return;
+    const reason = returnReason.trim();
+    if (!reason) {
+      alert("Tulis alasan retur terlebih dahulu.");
+      return;
+    }
+
+    setIsSubmittingReturn(true);
+    try {
+      await api.post(`/orders/${orderID || order.id}/request-return`, { reason });
+      setOrder((prev) => prev ? {
+        ...prev,
+        status: "RETURN_REQUESTED",
+        return_reason: reason,
+        return_requested_at: new Date().toISOString(),
+      } : prev);
+      alert("Pengajuan retur berhasil dikirim. Admin akan meninjau permintaan Anda.");
+    } catch (e: any) {
+      alert("Gagal mengajukan retur: " + (e.response?.data?.error || e.message));
+    } finally {
+      setIsSubmittingReturn(false);
+    }
+  };
+
+  const handleCancelOrder = async () => {
+    if (!order || isSubmittingCancellation) return;
+    if (!canCancelDirectly && !canRequestCancellation) return;
+
+    const reason = cancellationReason.trim();
+    if (canRequestCancellation && !reason) {
+      alert("Tulis alasan pembatalan terlebih dahulu.");
+      return;
+    }
+
+    setIsSubmittingCancellation(true);
+    try {
+      const response = await api.post(`/orders/${orderID || order.id}/cancel`, { reason });
+      const nextStatus = response.data.data?.status;
+      if (nextStatus) {
+        setOrder((prev) => prev ? {
+          ...prev,
+          status: nextStatus,
+          cancellation_reason: reason || prev.cancellation_reason,
+          cancellation_requested_at: nextStatus === "CANCELLATION_REQUESTED" ? new Date().toISOString() : prev.cancellation_requested_at,
+          cancelled_at: nextStatus === "CANCELLED" ? new Date().toISOString() : prev.cancelled_at,
+        } : prev);
+      }
+      setCancellationReason("");
+      alert(nextStatus === "CANCELLATION_REQUESTED"
+        ? "Pengajuan pembatalan berhasil dikirim. Admin akan meninjau permintaan Anda."
+        : "Pesanan berhasil dibatalkan.");
+    } catch (e: any) {
+      alert(readApiError(e, "Gagal memproses pembatalan pesanan. Silakan coba lagi."));
+    } finally {
+      setIsSubmittingCancellation(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex flex-col min-h-screen bg-[var(--bg)]">
         <Navbar />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="w-10 h-10 border-4 border-gray-200 border-t-[var(--color-leaf-500)] rounded-full animate-spin" />
-        </div>
+        <main className="flex-1 max-w-4xl mx-auto w-full px-4 sm:px-6 lg:px-8 pt-24 pb-16">
+          <OrderDetailSkeleton />
+        </main>
       </div>
     );
   }
@@ -319,7 +397,7 @@ export default function OrderDetailPage() {
                           <input ref={proofInputRef} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={handleProofFileChange} className="hidden" />
                           {proofFile && <p className="text-xs text-gray-500 mb-3">{proofFile.name}</p>}
                           <button onClick={handleUploadProof} disabled={isUploadingProof} className="px-4 py-2 rounded-xl bg-black text-white dark:bg-white dark:text-black text-sm font-bold inline-flex items-center gap-2 disabled:opacity-50">
-                            <Upload className="w-4 h-4" /> {isUploadingProof ? "Mengunggah..." : "Unggah Bukti"}
+                            {isUploadingProof ? <Spinner className="h-4 w-4" /> : <Upload className="w-4 h-4" />} {isUploadingProof ? "Mengunggah..." : "Unggah Bukti"}
                           </button>
                         </>
                       ) : (
@@ -338,6 +416,27 @@ export default function OrderDetailPage() {
                 <p className="text-sm text-gray-500">Data pembayaran belum tersedia.</p>
               )}
             </motion.div>
+
+            {sortedStatusHistory.length > 0 && (
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18 }} className="glass rounded-2xl p-5">
+                <h3 className="mb-4 flex items-center gap-2 font-bold">
+                  <RotateCcw className="h-5 w-5 text-orange-600" /> Riwayat Status Pesanan
+                </h3>
+                <div className="space-y-3">
+                  {sortedStatusHistory.map((entry) => (
+                    <div key={entry.id} className="rounded-xl border border-gray-100 p-3 text-sm dark:border-gray-800">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="font-semibold">{orderStatusLabel(entry.to_status)}</div>
+                        <div className="text-xs text-gray-500">
+                          {entry.created_at ? new Date(entry.created_at).toLocaleString("id-ID") : "-"}
+                        </div>
+                      </div>
+                      <p className="mt-2 text-gray-600 dark:text-gray-300">{orderHistoryLabel(entry)}</p>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
           </div>
 
           <div>
@@ -352,8 +451,90 @@ export default function OrderDetailPage() {
 
               {order.status === "DELIVERED" && (
                 <button onClick={handleConfirmDelivery} disabled={isConfirming} className="w-full mt-6 py-3 bg-[var(--color-leaf-600)] text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:scale-[1.02] transition-transform disabled:opacity-50">
-                  <CheckCircle className="w-5 h-5" /> {isConfirming ? "Memproses..." : "Konfirmasi Diterima"}
+                  {isConfirming ? <Spinner /> : <CheckCircle className="w-5 h-5" />} {isConfirming ? "Memproses..." : "Konfirmasi Diterima"}
                 </button>
+              )}
+
+              {(canRequestReturn || order.status === "RETURN_REQUESTED" || order.status === "RETURN_APPROVED" || order.status === "REFUNDED" || Boolean(order.return_rejected_reason)) && (
+                <div className="mt-4 rounded-2xl border border-orange-200 bg-orange-50/80 p-4 text-sm text-orange-950 dark:border-orange-900 dark:bg-orange-950/20 dark:text-orange-100">
+                  <div className="mb-2 flex items-center gap-2 font-bold">
+                    <RotateCcw className="h-4 w-4" /> Retur Pesanan
+                  </div>
+
+                  {(order.status === "RETURN_REQUESTED" || order.status === "RETURN_APPROVED" || order.status === "REFUNDED" || Boolean(order.return_rejected_reason)) ? (
+                    <div className="space-y-2">
+                      <p>
+                        Status retur: <span className="font-semibold">{orderStatusLabel(order.status)}</span>
+                      </p>
+                      {order.return_reason && <p>Alasan retur: {order.return_reason}</p>}
+                      {order.return_approved_at && <p>Disetujui pada: {new Date(order.return_approved_at).toLocaleString("id-ID")}</p>}
+                      {order.return_rejected_reason && <p>Catatan admin: {order.return_rejected_reason}</p>}
+                      {order.refund_reason && <p>Alasan refund: {order.refund_reason}</p>}
+                      {typeof order.refund_amount === "number" && order.refund_amount > 0 && (
+                        <p>Nominal refund: Rp {order.refund_amount.toLocaleString("id-ID")}</p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <p>Kalau pesanan bermasalah setelah diterima, Anda bisa mengajukan retur langsung dari halaman ini.</p>
+                      <textarea
+                        value={returnReason}
+                        onChange={(event) => setReturnReason(event.target.value)}
+                        rows={3}
+                        placeholder="Contoh: tanaman rusak saat diterima, pot pecah, atau produk tidak sesuai."
+                        className="w-full rounded-xl border border-orange-200 bg-white/90 p-3 text-sm text-gray-900 outline-none transition focus:border-orange-400 dark:border-orange-900 dark:bg-black/30 dark:text-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleRequestReturn}
+                        disabled={isSubmittingReturn}
+                        className="w-full rounded-xl bg-orange-600 px-4 py-2 font-bold text-white transition hover:bg-orange-700 disabled:opacity-50"
+                      >
+                  {isSubmittingReturn ? "Mengirim Pengajuan..." : "Ajukan Retur"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {(canCancelDirectly || canRequestCancellation || order.status === "CANCELLATION_REQUESTED") && (
+                <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50/80 p-4 text-sm text-rose-950 dark:border-rose-900 dark:bg-rose-950/20 dark:text-rose-100">
+                  <div className="mb-2 flex items-center gap-2 font-bold">
+                    <RotateCcw className="h-4 w-4" /> Pembatalan Pesanan
+                  </div>
+
+                  {order.status === "CANCELLATION_REQUESTED" ? (
+                    <div className="space-y-2">
+                      <p>Pengajuan pembatalan sedang ditinjau admin.</p>
+                      {order.cancellation_reason && <p>Alasan pembatalan: {order.cancellation_reason}</p>}
+                      {order.cancellation_requested_at && <p>Diajukan pada: {new Date(order.cancellation_requested_at).toLocaleString("id-ID")}</p>}
+                      {order.cancellation_rejected_reason && <p>Catatan admin: {order.cancellation_rejected_reason}</p>}
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <p>
+                        {canCancelDirectly
+                          ? "Pesanan yang belum dibayar bisa dibatalkan langsung."
+                          : "Pesanan yang sudah dibayar atau sedang diproses perlu direview admin sebelum dibatalkan."}
+                      </p>
+                      <textarea
+                        value={cancellationReason}
+                        onChange={(event) => setCancellationReason(event.target.value)}
+                        rows={3}
+                        placeholder="Tulis alasan pembatalan pesanan."
+                        className="w-full rounded-xl border border-rose-200 bg-white/90 p-3 text-sm text-gray-900 outline-none transition focus:border-rose-400 dark:border-rose-900 dark:bg-black/30 dark:text-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleCancelOrder}
+                        disabled={isSubmittingCancellation}
+                        className="w-full rounded-xl bg-rose-600 px-4 py-2 font-bold text-white transition hover:bg-rose-700 disabled:opacity-50"
+                      >
+                        {isSubmittingCancellation ? "Memproses..." : canCancelDirectly ? "Batalkan Pesanan" : "Ajukan Pembatalan"}
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
 
               {order.note && <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-xl text-sm"><span className="font-bold text-amber-700">Catatan:</span> {order.note}</div>}
@@ -362,6 +543,29 @@ export default function OrderDetailPage() {
         </div>
       </main>
       <Footer />
+    </div>
+  );
+}
+
+function OrderDetailSkeleton() {
+  return (
+    <div className="space-y-8">
+      <Skeleton className="h-4 w-40" />
+      <div className="flex items-center justify-between">
+        <div className="space-y-2">
+          <Skeleton className="h-7 w-44" />
+          <Skeleton className="h-4 w-56" />
+        </div>
+        <Skeleton className="h-8 w-32 rounded-full" />
+      </div>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2 space-y-6">
+          <OrderListSkeleton count={2} />
+          <Skeleton className="h-44 rounded-2xl" />
+          <Skeleton className="h-64 rounded-2xl" />
+        </div>
+        <Skeleton className="h-72 rounded-2xl" />
+      </div>
     </div>
   );
 }
@@ -426,13 +630,27 @@ function orderStatusLabel(status: string) {
       return "Terkirim";
     case "COMPLETED":
       return "Selesai";
+    case "CANCELLATION_REQUESTED":
+      return "Menunggu Review Pembatalan";
     case "CANCELLED":
       return "Dibatalkan";
     case "RETURN_REQUESTED":
       return "Pengajuan Retur";
+    case "RETURN_APPROVED":
+      return "Retur Disetujui";
     case "REFUNDED":
       return "Dana Dikembalikan";
     default:
       return status.replace(/_/g, " ");
   }
+}
+
+function orderHistoryLabel(entry: OrderStatusHistory) {
+  if (entry.note && entry.note.trim()) {
+    return entry.note;
+  }
+  if (entry.from_status) {
+    return `${orderStatusLabel(entry.from_status)} -> ${orderStatusLabel(entry.to_status)}`;
+  }
+  return orderStatusLabel(entry.to_status);
 }

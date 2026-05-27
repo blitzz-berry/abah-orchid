@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import api from "@/lib/api";
 import { AlertCircle, Edit2, ImagePlus, PackagePlus, Plus, Search, Trash2, X } from "lucide-react";
 import { motion } from "framer-motion";
+import { Spinner, TableRowsSkeleton } from "@/components/ui/loading";
 import type { Category, Product } from "@/types";
 
 type NewProductImage = {
@@ -305,7 +306,7 @@ export default function AdminProductsPage() {
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={6} className="p-8 text-center"><div className="w-6 h-6 border-2 border-t-[var(--color-brand-600)] rounded-full animate-spin mx-auto" /></td></tr>
+                <TableRowsSkeleton columns={6} rows={6} />
               ) : filtered.length === 0 ? (
                 <tr><td colSpan={6} className="p-8 text-center text-gray-500 text-sm">Tidak ada produk</td></tr>
               ) : filtered.map((product) => {
@@ -562,7 +563,7 @@ export default function AdminProductsPage() {
                         }}
                         className="bg-amber-600 text-white px-5 py-2.5 rounded-xl font-bold text-sm disabled:opacity-50"
                       >
-                        {isSubmitting ? "Mengunggah..." : "Unggah Gambar"}
+                        {isSubmitting ? <span className="inline-flex items-center gap-2"><Spinner className="h-4 w-4" /> Mengunggah...</span> : "Unggah Gambar"}
                       </button>
                     </div>
                   </div>
@@ -625,7 +626,7 @@ export default function AdminProductsPage() {
               <Input label="Tips Perawatan" value={formData.care_tips} onChange={(value) => setField("care_tips", value)} />
               <div className="md:col-span-2 flex justify-end gap-2 mt-2">
                 <button type="button" onClick={closeProductModal} className="px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-gray-100 dark:hover:bg-zinc-800">Batal</button>
-                <button type="submit" disabled={isSubmitting} className="bg-[var(--color-brand-600)] text-white px-5 py-2.5 rounded-xl font-bold text-sm disabled:opacity-50">{isSubmitting ? "Menyimpan..." : "Simpan"}</button>
+                <button type="submit" disabled={isSubmitting} className="inline-flex items-center justify-center gap-2 bg-[var(--color-brand-600)] text-white px-5 py-2.5 rounded-xl font-bold text-sm disabled:opacity-50">{isSubmitting && <Spinner className="h-4 w-4" />}{isSubmitting ? "Menyimpan..." : "Simpan"}</button>
               </div>
             </form>
           </div>

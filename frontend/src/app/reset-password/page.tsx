@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Leaf, Lock, ArrowLeft } from "lucide-react";
 import api from "@/lib/api";
+import { Spinner } from "@/components/ui/loading";
 import { motion } from "framer-motion";
 
 function ResetPasswordContent() {
@@ -80,7 +81,7 @@ function ResetPasswordContent() {
                   <input type="password" required minLength={8} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-white/50 dark:bg-black/50 border border-gray-200 dark:border-gray-800 rounded-xl outline-none transition-all" placeholder="Ulangi kata sandi" />
                 </div>
               </div>
-              <button type="submit" disabled={isLoading} className="w-full py-3 mt-2 bg-black text-white dark:bg-white dark:text-black rounded-xl font-bold disabled:opacity-50 hover:scale-[1.02] transition-transform">{isLoading ? "Menyimpan..." : "Atur Ulang Kata Sandi"}</button>
+              <button type="submit" disabled={isLoading} className="w-full py-3 mt-2 bg-black text-white dark:bg-white dark:text-black rounded-xl font-bold disabled:opacity-50 hover:scale-[1.02] transition-transform inline-flex items-center justify-center gap-2">{isLoading && <Spinner className="h-4 w-4" />}{isLoading ? "Menyimpan..." : "Atur Ulang Kata Sandi"}</button>
             </form>
             <p className="text-center mt-6 text-sm text-gray-500"><Link href="/login" className="text-[var(--color-brand-600)] font-medium hover:underline flex items-center justify-center gap-1"><ArrowLeft className="w-4 h-4" /> Kembali ke Login</Link></p>
           </>

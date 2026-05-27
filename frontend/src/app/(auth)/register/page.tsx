@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Leaf, Lock, Mail, User, Phone } from "lucide-react";
 import GoogleAuthButton from "@/components/auth/GoogleAuthButton";
+import { Spinner } from "@/components/ui/loading";
 import api from "@/lib/api";
 import { motion } from "framer-motion";
 
@@ -68,7 +69,7 @@ export default function RegisterPage() {
               </div>
             </div>
           ))}
-          <button type="submit" disabled={isLoading} className="w-full py-3 mt-2 bg-[var(--color-leaf-600)] text-white rounded-xl font-bold disabled:opacity-50 hover:scale-[1.02] transition-transform">{isLoading ? "Memproses..." : "Daftar"}</button>
+          <button type="submit" disabled={isLoading} className="w-full py-3 mt-2 bg-[var(--color-leaf-600)] text-white rounded-xl font-bold disabled:opacity-50 hover:scale-[1.02] transition-transform inline-flex items-center justify-center gap-2">{isLoading && <Spinner className="h-4 w-4" />}{isLoading ? "Memproses..." : "Daftar"}</button>
         </form>
 
         <p className="text-center mt-6 text-sm text-gray-500">Sudah memiliki akun? <Link href="/login" className="text-[var(--color-leaf-600)] font-bold hover:underline">Masuk</Link></p>

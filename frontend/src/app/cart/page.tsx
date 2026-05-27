@@ -9,6 +9,7 @@ import api from "@/lib/api";
 import { useAuthStore } from "@/store/useAuthStore";
 import Navbar from "@/components/ui/Navbar";
 import Footer from "@/components/ui/Footer";
+import { CartSkeleton } from "@/components/ui/loading";
 import type { Cart, CartItem } from "@/types";
 
 export default function CartPage() {
@@ -119,7 +120,7 @@ export default function CartPage() {
         </div>
 
         {isLoading ? (
-          <div className="flex justify-center py-20"><div className="w-10 h-10 border-4 border-gray-200 border-t-[var(--color-leaf-500)] rounded-full animate-spin" /></div>
+          <CartSkeleton />
         ) : !cart || cartItems.length === 0 ? (
           <div className="text-center py-20 glass rounded-3xl">
             <Leaf className="w-16 h-16 text-gray-300 mx-auto mb-4" />

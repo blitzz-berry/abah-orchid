@@ -14,7 +14,6 @@ const footerLinks = {
     { label: "Akun Saya", href: "/profile" },
     { label: "Pesanan Saya", href: "/orders" },
     { label: "Keranjang", href: "/cart" },
-    { label: "Pemesanan B2B", href: "/products?type=B2B" },
   ],
   tentang: [
     { label: "Tentang Kami", href: "#" },

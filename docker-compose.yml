@@ -1,12 +1,10 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine
     container_name: orchidmart_postgres
     environment:
       POSTGRES_USER: orchidmart
-      POSTGRES_PASSWORD: secretpassword
+      POSTGRES_PASSWORD: change-this-database-password
       POSTGRES_DB: orchidmart
     ports:
       - "5432:5432"

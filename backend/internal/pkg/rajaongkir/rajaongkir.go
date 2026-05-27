@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"orchidmart-backend/internal/config"
+	"orchidmart-backend/internal/pkg/appcache"
 	"os"
 	"strings"
 	"time"
@@ -15,9 +16,21 @@ import (
 
 const (
 	BaseURL        = "https://api.rajaongkir.com/starter"
-	dummyAPIKey    = "e1234567890dummyapikey"
 	requestTimeout = 10 * time.Second
+	provinceTTL    = 24 * time.Hour
+	cityTTL        = 24 * time.Hour
+	costTTL        = 5 * time.Minute
 )
+
+var responseCache appcache.Store = appcache.Disabled()
+
+func SetCache(store appcache.Store) {
+	if store == nil {
+		responseCache = appcache.Disabled()
+		return
+	}
+	responseCache = store
+}
 
 func getAPIKey() string {
 	key := os.Getenv("RAJAONGKIR_API_KEY")
@@ -25,14 +38,19 @@ func getAPIKey() string {
 		if config.IsProduction() {
 			log.Fatal("RAJAONGKIR_API_KEY is required in production")
 		}
-		key = dummyAPIKey
 	}
 	return key
 }
 
 func GetProvinces() (interface{}, error) {
+	key := shippingCacheKey("provinces")
+	if cached, ok := cachedResponse(key); ok {
+		return cached, nil
+	}
 	if shouldUseFallback() {
-		return fallbackProvinces(), nil
+		data := fallbackProvinces()
+		responseCache.SetJSON(key, data, provinceTTL)
+		return data, nil
 	}
 
 	req, _ := http.NewRequest("GET", BaseURL+"/province", nil)
@@ -41,29 +59,36 @@ func GetProvinces() (interface{}, error) {
 	client := &http.Client{Timeout: requestTimeout}
 	res, err := client.Do(req)
 	if err != nil {
-		return fallbackOnRajaError(fallbackProvinces(), err)
+		return fallbackAndCache(key, fallbackProvinces(), err, time.Minute)
 	}
 	defer res.Body.Close()
 
 	var result map[string]interface{}
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		return fallbackOnRajaError(fallbackProvinces(), err)
+		return fallbackAndCache(key, fallbackProvinces(), err, time.Minute)
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
-		return fallbackOnRajaError(fallbackProvinces(), err)
+		return fallbackAndCache(key, fallbackProvinces(), err, time.Minute)
 	}
 	if !isRajaOngkirSuccess(result) {
-		return fallbackOnRajaError(fallbackProvinces(), fmt.Errorf("rajaongkir provinces request failed"))
+		return fallbackAndCache(key, fallbackProvinces(), fmt.Errorf("rajaongkir provinces request failed"), time.Minute)
 	}
 
+	responseCache.SetJSON(key, result, provinceTTL)
 	return result, nil
 }
 
 func GetCities(provinceID string) (interface{}, error) {
 	provinceID = strings.TrimSpace(provinceID)
+	key := shippingCacheKey("cities:" + provinceID)
+	if cached, ok := cachedResponse(key); ok {
+		return cached, nil
+	}
 	if shouldUseFallback() {
-		return fallbackCities(provinceID), nil
+		data := fallbackCities(provinceID)
+		responseCache.SetJSON(key, data, cityTTL)
+		return data, nil
 	}
 
 	req, _ := http.NewRequest("GET", BaseURL+"/city?province="+url.QueryEscape(provinceID), nil)
@@ -72,22 +97,23 @@ func GetCities(provinceID string) (interface{}, error) {
 	client := &http.Client{Timeout: requestTimeout}
 	res, err := client.Do(req)
 	if err != nil {
-		return fallbackOnRajaError(fallbackCities(provinceID), err)
+		return fallbackAndCache(key, fallbackCities(provinceID), err, time.Minute)
 	}
 	defer res.Body.Close()
 
 	var result map[string]interface{}
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		return fallbackOnRajaError(fallbackCities(provinceID), err)
+		return fallbackAndCache(key, fallbackCities(provinceID), err, time.Minute)
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
-		return fallbackOnRajaError(fallbackCities(provinceID), err)
+		return fallbackAndCache(key, fallbackCities(provinceID), err, time.Minute)
 	}
 	if !isRajaOngkirSuccess(result) {
-		return fallbackOnRajaError(fallbackCities(provinceID), fmt.Errorf("rajaongkir cities request failed"))
+		return fallbackAndCache(key, fallbackCities(provinceID), fmt.Errorf("rajaongkir cities request failed"), time.Minute)
 	}
 
+	responseCache.SetJSON(key, result, cityTTL)
 	return result, nil
 }
 
@@ -106,8 +132,14 @@ func GetCost(payload CostPayload) (interface{}, error) {
 		payload.Weight = 1000
 	}
 	payload.Courier = strings.ToLower(strings.TrimSpace(payload.Courier))
+	key := shippingCacheKey(fmt.Sprintf("cost:%s:%s:%d:%s", payload.Origin, payload.Destination, payload.Weight, payload.Courier))
+	if cached, ok := cachedResponse(key); ok {
+		return cached, nil
+	}
 	if shouldUseFallback() {
-		return fallbackCost(payload), nil
+		data := fallbackCost(payload)
+		responseCache.SetJSON(key, data, costTTL)
+		return data, nil
 	}
 
 	form := url.Values{}
@@ -123,28 +155,56 @@ func GetCost(payload CostPayload) (interface{}, error) {
 	client := &http.Client{Timeout: requestTimeout}
 	res, err := client.Do(req)
 	if err != nil {
-		return fallbackOnRajaError(fallbackCost(payload), err)
+		return fallbackAndCache(key, fallbackCost(payload), err, time.Minute)
 	}
 	defer res.Body.Close()
 
 	var result map[string]interface{}
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		return fallbackOnRajaError(fallbackCost(payload), err)
+		return fallbackAndCache(key, fallbackCost(payload), err, time.Minute)
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
-		return fallbackOnRajaError(fallbackCost(payload), err)
+		return fallbackAndCache(key, fallbackCost(payload), err, time.Minute)
 	}
 	if !isRajaOngkirSuccess(result) {
-		return fallbackOnRajaError(fallbackCost(payload), fmt.Errorf("rajaongkir cost request failed"))
+		return fallbackAndCache(key, fallbackCost(payload), fmt.Errorf("rajaongkir cost request failed"), time.Minute)
 	}
 
+	responseCache.SetJSON(key, result, costTTL)
 	return result, nil
 }
 
+func shippingCacheKey(suffix string) string {
+	mode := "provider"
+	if shouldUseFallback() {
+		mode = "fallback"
+	}
+	return "shipping:" + mode + ":" + suffix
+}
+
+func cachedResponse(key string) (interface{}, bool) {
+	var data interface{}
+	if !responseCache.GetJSON(key, &data) {
+		return nil, false
+	}
+	return data, true
+}
+
+func fallbackAndCache(key string, fallback interface{}, err error, ttl time.Duration) (interface{}, error) {
+	data, fallbackErr := fallbackOnRajaError(fallback, err)
+	if fallbackErr == nil {
+		responseCache.SetJSON(key, data, ttl)
+	}
+	return data, fallbackErr
+}
+
 func shouldUseFallback() bool {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("RAJAONGKIR_FORCE_FALLBACK")), "true") {
+		return true
+	}
 	key := strings.TrimSpace(os.Getenv("RAJAONGKIR_API_KEY"))
-	return !config.IsProduction() && (key == "" || key == dummyAPIKey)
+	return !config.IsProduction() && key == ""
 }
 
 func fallbackOnRajaError(fallback interface{}, err error) (interface{}, error) {
