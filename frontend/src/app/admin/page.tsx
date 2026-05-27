@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Users, DollarSign, Package, TrendingUp, ChevronRight, ShoppingBag, Boxes } from "lucide-react";
 import api from "@/lib/api";
+import { onRealtimeEvent } from "@/lib/realtime";
 import { motion } from "framer-motion";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -83,6 +84,23 @@ export default function AdminDashboard() {
     };
 
     void fetchData();
+  }, []);
+
+  useEffect(() => {
+    return onRealtimeEvent((event) => {
+      if (event.type !== "order.changed" && event.type !== "payment.changed") return;
+      void Promise.allSettled([
+        api.get("/admin/analytics/overview"),
+        api.get("/admin/orders"),
+      ]).then(([analyticsRes, ordersRes]) => {
+        if (analyticsRes.status === "fulfilled") {
+          setDashboard(analyticsRes.value.data.data || null);
+        }
+        if (ordersRes.status === "fulfilled") {
+          setRecentOrders((ordersRes.value.data.data || []).slice(0, 5));
+        }
+      });
+    });
   }, []);
 
   const maxRevenue = useMemo(() => {

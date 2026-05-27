@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"orchidmart-backend/internal/model"
 )
 
@@ -32,21 +34,23 @@ func (r *fakeReturnOrderRepo) CreateOrderWithTx(*model.Order, string) error { re
 func (r *fakeReturnOrderRepo) CreateOrderFromCartItemsWithTx(*model.Order, string, []string) error {
 	return nil
 }
-func (r *fakeReturnOrderRepo) GetOrderByID(string) (*model.Order, error)                { return r.order, r.err }
-func (r *fakeReturnOrderRepo) GetOrderByIDForUser(string, string) (*model.Order, error) { return r.order, r.err }
-func (r *fakeReturnOrderRepo) GetOrdersByUserID(string) ([]model.Order, error)          { return nil, nil }
-func (r *fakeReturnOrderRepo) UpdateOrderStatus(string, string) error                    { return nil }
-func (r *fakeReturnOrderRepo) ConfirmDelivery(string, string) error                      { return nil }
-func (r *fakeReturnOrderRepo) RequestCancellation(string, string, string) error         { return nil }
-func (r *fakeReturnOrderRepo) RejectCancellation(string, string) (string, error)        { return "", nil }
-func (r *fakeReturnOrderRepo) CreateOrUpdatePayment(*model.Payment) error               { return nil }
+func (r *fakeReturnOrderRepo) GetOrderByID(string) (*model.Order, error) { return r.order, r.err }
+func (r *fakeReturnOrderRepo) GetOrderByIDForUser(string, string) (*model.Order, error) {
+	return r.order, r.err
+}
+func (r *fakeReturnOrderRepo) GetOrdersByUserID(string) ([]model.Order, error)   { return nil, nil }
+func (r *fakeReturnOrderRepo) UpdateOrderStatus(string, string) error            { return nil }
+func (r *fakeReturnOrderRepo) ConfirmDelivery(string, string) error              { return nil }
+func (r *fakeReturnOrderRepo) RequestCancellation(string, string, string) error  { return nil }
+func (r *fakeReturnOrderRepo) RejectCancellation(string, string) (string, error) { return "", nil }
+func (r *fakeReturnOrderRepo) CreateOrUpdatePayment(*model.Payment) error        { return nil }
 func (r *fakeReturnOrderRepo) GetPaymentByOrderID(string) (*model.Payment, error) {
 	return nil, errors.New("not implemented")
 }
 func (r *fakeReturnOrderRepo) CompletePaymentWithTx(*model.Payment) error { return nil }
-func (r *fakeReturnOrderRepo) CancelOrderWithTx(string, string) error      { return nil }
-func (r *fakeReturnOrderRepo) ExpirePendingPayments(time.Time) (int64, error) {
-	return 0, nil
+func (r *fakeReturnOrderRepo) CancelOrderWithTx(string, string) error     { return nil }
+func (r *fakeReturnOrderRepo) ExpirePendingPayments(time.Time) ([]string, error) {
+	return nil, nil
 }
 func (r *fakeReturnOrderRepo) RequestReturn(string, string, string) error { return nil }
 func (r *fakeReturnOrderRepo) RefundOrder(orderID, reason string, amount float64) error {
@@ -69,12 +73,26 @@ func (r *fakeReturnOrderRepo) RejectReturn(orderID, reason string) (string, erro
 type fakeReturnCartRepo struct{}
 
 func (r *fakeReturnCartRepo) GetCartByUserID(string) (*model.Cart, error) { return nil, nil }
-func (r *fakeReturnCartRepo) AddToCart(*model.CartItem) error              { return nil }
+func (r *fakeReturnCartRepo) AddToCart(*model.CartItem) error             { return nil }
 func (r *fakeReturnCartRepo) UpdateCartItemQuantity(string, string, int) error {
 	return nil
 }
 func (r *fakeReturnCartRepo) RemoveFromCart(string, string) error { return nil }
 func (r *fakeReturnCartRepo) ClearCart(string) error              { return nil }
+
+type fakeOrderEventPublisher struct {
+	userID  string
+	orderID string
+	status  string
+}
+
+func (p *fakeOrderEventPublisher) OrderChanged(userID, orderID, status string) {
+	p.userID = userID
+	p.orderID = orderID
+	p.status = status
+}
+
+func (p *fakeOrderEventPublisher) PaymentChanged(string, string, string) {}
 
 func TestApproveReturnRequiresRequestStatus(t *testing.T) {
 	repo := &fakeReturnOrderRepo{order: &model.Order{Status: "COMPLETED"}}
@@ -86,11 +104,13 @@ func TestApproveReturnRequiresRequestStatus(t *testing.T) {
 }
 
 func TestApproveReturnDelegatesToRepository(t *testing.T) {
+	userID := uuid.New()
 	repo := &fakeReturnOrderRepo{
-		order:               &model.Order{Status: "RETURN_REQUESTED"},
+		order:               &model.Order{Status: "RETURN_REQUESTED", UserID: userID},
 		approveReturnStatus: "RETURN_APPROVED",
 	}
-	svc := NewOrderService(repo, &fakeReturnCartRepo{})
+	events := &fakeOrderEventPublisher{}
+	svc := NewRealtimeOrderServiceWithDB(repo, &fakeReturnCartRepo{}, nil, events)
 
 	status, err := svc.ApproveReturn("order-2", "Produk memenuhi syarat retur")
 	if err != nil {
@@ -101,6 +121,9 @@ func TestApproveReturnDelegatesToRepository(t *testing.T) {
 	}
 	if repo.approveReturnOrderID != "order-2" || repo.approveReturnReason != "Produk memenuhi syarat retur" {
 		t.Fatalf("ApproveReturn() payload incorrect: %+v", repo)
+	}
+	if events.userID != userID.String() || events.orderID != "order-2" || events.status != "RETURN_APPROVED" {
+		t.Fatalf("ApproveReturn() realtime event = %+v", events)
 	}
 }
 
@@ -114,11 +137,13 @@ func TestRejectReturnRequiresReason(t *testing.T) {
 }
 
 func TestRejectReturnDelegatesToRepository(t *testing.T) {
+	userID := uuid.New()
 	repo := &fakeReturnOrderRepo{
-		order:              &model.Order{Status: "RETURN_REQUESTED"},
+		order:              &model.Order{Status: "RETURN_REQUESTED", UserID: userID},
 		rejectReturnStatus: "COMPLETED",
 	}
-	svc := NewOrderService(repo, &fakeReturnCartRepo{})
+	events := &fakeOrderEventPublisher{}
+	svc := NewRealtimeOrderServiceWithDB(repo, &fakeReturnCartRepo{}, nil, events)
 
 	status, err := svc.RejectReturn("order-4", "Tanaman masih sesuai deskripsi")
 	if err != nil {
@@ -130,5 +155,7 @@ func TestRejectReturnDelegatesToRepository(t *testing.T) {
 	if repo.rejectReturnOrderID != "order-4" || repo.rejectReturnReason != "Tanaman masih sesuai deskripsi" {
 		t.Fatalf("RejectReturn() payload incorrect: %+v", repo)
 	}
+	if events.userID != userID.String() || events.orderID != "order-4" || events.status != "COMPLETED" {
+		t.Fatalf("RejectReturn() realtime event = %+v", events)
+	}
 }
-

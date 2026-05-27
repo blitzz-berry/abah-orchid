@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { CheckCircle, ExternalLink, Eye, FileText, Package, RotateCcw, Search, Truck, X } from "lucide-react";
 import { motion } from "framer-motion";
 import api from "@/lib/api";
+import { onRealtimeEvent } from "@/lib/realtime";
 import { createAuthorizedUploadObjectURL, openUploadURL, resolveUploadURL } from "@/lib/uploads";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -78,6 +79,20 @@ export default function AdminOrdersPage() {
 
     void fetchOrders();
   }, []);
+
+  useEffect(() => {
+    return onRealtimeEvent((event) => {
+      if (event.type !== "order.changed" && event.type !== "payment.changed") return;
+      void api.get("/admin/orders").then((response) => {
+        setOrders(response.data.data || []);
+      }).catch(() => undefined);
+      if (detailOrder?.id && detailOrder.id === event.order_id) {
+        void api.get(`/admin/orders/${detailOrder.id}`).then((response) => {
+          setDetailOrder(response.data.data || null);
+        }).catch(() => undefined);
+      }
+    });
+  }, [detailOrder?.id]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);

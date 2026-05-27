@@ -27,7 +27,7 @@ type OrderRepository interface {
 	GetPaymentByOrderID(orderID string) (*model.Payment, error)
 	CompletePaymentWithTx(payment *model.Payment) error
 	CancelOrderWithTx(orderID, reason string) error
-	ExpirePendingPayments(now time.Time) (int64, error)
+	ExpirePendingPayments(now time.Time) ([]string, error)
 	RequestReturn(orderID, userID, reason string) error
 	RefundOrder(orderID, reason string, amount float64) error
 }
@@ -511,20 +511,20 @@ func releaseCouponUsage(tx *gorm.DB, code string) error {
 		UpdateColumn("used_count", gorm.Expr("used_count - 1")).Error
 }
 
-func (r *orderRepository) ExpirePendingPayments(now time.Time) (int64, error) {
+func (r *orderRepository) ExpirePendingPayments(now time.Time) ([]string, error) {
 	var payments []model.Payment
 	if err := r.db.Where("status IN ? AND expired_at IS NOT NULL AND expired_at <= ?", []string{"PENDING", "WAITING_PROOF"}, now).Find(&payments).Error; err != nil {
-		return 0, err
+		return nil, err
 	}
 
-	var expired int64
+	expiredOrderIDs := make([]string, 0, len(payments))
 	for _, payment := range payments {
 		if err := r.CancelOrderWithTx(payment.OrderID.String(), "payment expired after 24 hours"); err != nil {
-			return expired, err
+			return expiredOrderIDs, err
 		}
-		expired++
+		expiredOrderIDs = append(expiredOrderIDs, payment.OrderID.String())
 	}
-	return expired, nil
+	return expiredOrderIDs, nil
 }
 
 func (r *orderRepository) RequestReturn(orderID, userID, reason string) error {
@@ -540,12 +540,12 @@ func (r *orderRepository) RequestReturn(orderID, userID, reason string) error {
 		}
 		now := time.Now()
 		if err := tx.Model(&model.Order{}).Where("id = ?", order.ID).Updates(map[string]interface{}{
-			"status":                        "RETURN_REQUESTED",
-			"return_reason":                 reason,
-			"return_requested_at":           &now,
-			"return_requested_from_status":  order.Status,
-			"return_rejected_reason":        "",
-			"return_approved_at":            nil,
+			"status":                       "RETURN_REQUESTED",
+			"return_reason":                reason,
+			"return_requested_at":          &now,
+			"return_requested_from_status": order.Status,
+			"return_rejected_reason":       "",
+			"return_approved_at":           nil,
 		}).Error; err != nil {
 			return err
 		}
@@ -574,8 +574,8 @@ func (r *orderRepository) ApproveReturn(orderID, reason string) (string, error) 
 		now := time.Now()
 		nextStatus = "RETURN_APPROVED"
 		if err := tx.Model(&model.Order{}).Where("id = ?", order.ID).Updates(map[string]interface{}{
-			"status":             nextStatus,
-			"return_approved_at": &now,
+			"status":                 nextStatus,
+			"return_approved_at":     &now,
 			"return_rejected_reason": "",
 		}).Error; err != nil {
 			return err

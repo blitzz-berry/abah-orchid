@@ -13,16 +13,22 @@ import (
 	"gorm.io/gorm"
 	"orchidmart-backend/internal/dto/request"
 	"orchidmart-backend/internal/model"
+	"orchidmart-backend/internal/pkg/realtime"
 	"orchidmart-backend/internal/service"
 )
 
 type OrderHandler struct {
 	orderService service.OrderService
 	db           *gorm.DB
+	events       *realtime.Hub
 }
 
 func NewOrderHandler(orderService service.OrderService, db *gorm.DB) *OrderHandler {
 	return &OrderHandler{orderService: orderService, db: db}
+}
+
+func NewRealtimeOrderHandler(orderService service.OrderService, db *gorm.DB, events *realtime.Hub) *OrderHandler {
+	return &OrderHandler{orderService: orderService, db: db, events: events}
 }
 
 func (h *OrderHandler) Checkout(c *gin.Context) {
@@ -239,6 +245,9 @@ func (h *OrderHandler) createAdminReturnNotifications(orderID string, reason str
 		if err := h.db.Create(&notification).Error; err != nil {
 			return err
 		}
+		if h.events != nil {
+			h.events.NotificationCreated(admin.ID.String(), order.ID.String())
+		}
 	}
 
 	return nil
@@ -274,6 +283,9 @@ func (h *OrderHandler) createAdminCancellationNotifications(orderID string, reas
 		}
 		if err := h.db.Create(&notification).Error; err != nil {
 			return err
+		}
+		if h.events != nil {
+			h.events.NotificationCreated(admin.ID.String(), order.ID.String())
 		}
 	}
 

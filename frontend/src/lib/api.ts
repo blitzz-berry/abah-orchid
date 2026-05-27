@@ -31,7 +31,7 @@ function shouldUseSameOriginProxy(configuredURL?: string) {
   }
 }
 
-function defaultAPIBaseURL() {
+export function getAPIBaseURL() {
   const configuredURL = process.env.NEXT_PUBLIC_API_URL;
   if (typeof window === 'undefined') return configuredURL || 'http://localhost:8080/api/v1';
   if (shouldUseSameOriginProxy(configuredURL)) return '/api/v1';
@@ -57,7 +57,11 @@ function shouldSkipRefresh(url?: string) {
 }
 
 export function setAccessToken(token: string | null | undefined) {
-  accessToken = token || null;
+	accessToken = token || null;
+}
+
+export function getAccessToken() {
+  return accessToken;
 }
 
 export function clearAccessToken() {
@@ -72,7 +76,7 @@ export function clearLegacyAuthStorage() {
 }
 
 const api = axios.create({
-  baseURL: defaultAPIBaseURL(),
+  baseURL: getAPIBaseURL(),
   withCredentials: true,
 });
 

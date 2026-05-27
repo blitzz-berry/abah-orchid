@@ -4,9 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ShoppingBag, User, LogOut, Menu, X, Heart, Bell, CheckCheck, ClipboardList, ChevronRight } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import api from "@/lib/api";
+import { onRealtimeEvent } from "@/lib/realtime";
 import type { Notification } from "@/types";
 
 export default function Navbar() {
@@ -18,6 +19,7 @@ export default function Navbar() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [notificationFilter, setNotificationFilter] = useState<"all" | "unread">("all");
   const [now, setNow] = useState(() => Date.now());
+  const notificationContainerRef = useRef<HTMLDivElement | null>(null);
 
   const navLinks = [
     { href: "/products", label: "Katalog" },
@@ -56,9 +58,31 @@ export default function Navbar() {
   }, [isAuthenticated, user]);
 
   useEffect(() => {
+    if (!isAuthenticated || !user || user.role === "admin") return;
+    return onRealtimeEvent((event) => {
+      if (event.type !== "notification.created") return;
+      void api.get("/notifications").then((response) => {
+        const payload = response.data.data || response.data;
+        setNotifications(payload.notifications || []);
+        setUnreadCount(payload.unread_count || 0);
+      }).catch(() => undefined);
+    });
+  }, [isAuthenticated, user]);
+
+  useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 60000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!notificationOpen) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (notificationContainerRef.current?.contains(event.target as Node)) return;
+      setNotificationOpen(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [notificationOpen]);
 
   const markNotificationRead = async (notification: Notification) => {
     if (!notification.is_read) {
@@ -151,7 +175,7 @@ export default function Navbar() {
           {/* Right Actions */}
           <div className="flex items-center gap-2">
             {isAuthenticated && user?.role !== "admin" && (
-              <div className="relative">
+              <div ref={notificationContainerRef} className="relative">
                 <button
                   onClick={() => setNotificationOpen((open) => !open)}
                   className="p-2.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl transition-colors relative"

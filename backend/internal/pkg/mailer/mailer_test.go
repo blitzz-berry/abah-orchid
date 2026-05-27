@@ -15,6 +15,65 @@ func TestSendPasswordResetEmailRequiresSMTPConfiguration(t *testing.T) {
 	}
 }
 
+func TestSendPaymentConfirmedEmailRequiresSMTPConfiguration(t *testing.T) {
+	t.Setenv("SMTP_HOST", "")
+	t.Setenv("SMTP_PORT", "")
+	t.Setenv("SMTP_USERNAME", "")
+	t.Setenv("SMTP_PASSWORD", "")
+	t.Setenv("SMTP_FROM", "")
+
+	err := SendPaymentConfirmedEmail("buyer@example.com", "Buyer", "ORD-001", 125000)
+	if err != ErrMailerNotConfigured {
+		t.Fatalf("SendPaymentConfirmedEmail() error = %v, want ErrMailerNotConfigured", err)
+	}
+}
+
+func TestSendOrderShippedEmailRequiresSMTPConfiguration(t *testing.T) {
+	t.Setenv("SMTP_HOST", "")
+	t.Setenv("SMTP_PORT", "")
+	t.Setenv("SMTP_USERNAME", "")
+	t.Setenv("SMTP_PASSWORD", "")
+	t.Setenv("SMTP_FROM", "")
+
+	err := SendOrderShippedEmail("buyer@example.com", "Buyer", "ORD-001", "jne", "RESI-001")
+	if err != ErrMailerNotConfigured {
+		t.Fatalf("SendOrderShippedEmail() error = %v, want ErrMailerNotConfigured", err)
+	}
+}
+
+func TestDecisionEmailsRequireSMTPConfiguration(t *testing.T) {
+	t.Setenv("SMTP_HOST", "")
+	t.Setenv("SMTP_PORT", "")
+	t.Setenv("SMTP_USERNAME", "")
+	t.Setenv("SMTP_PASSWORD", "")
+	t.Setenv("SMTP_FROM", "")
+
+	tests := []struct {
+		name string
+		send func() error
+	}{
+		{name: "order cancelled", send: func() error {
+			return SendOrderCancelledEmail("buyer@example.com", "Buyer", "ORD-001", "CANCELLED", "Stok habis")
+		}},
+		{name: "cancellation decision", send: func() error {
+			return SendCancellationDecisionEmail("buyer@example.com", "Buyer", "ORD-001", false, "PAID", "Sudah diproses")
+		}},
+		{name: "return decision", send: func() error {
+			return SendReturnDecisionEmail("buyer@example.com", "Buyer", "ORD-001", true, "Disetujui")
+		}},
+		{name: "refund", send: func() error {
+			return SendRefundCompletedEmail("buyer@example.com", "Buyer", "ORD-001", "Retur diterima", 125000)
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := tt.send(); err != ErrMailerNotConfigured {
+				t.Fatalf("send email error = %v, want ErrMailerNotConfigured", err)
+			}
+		})
+	}
+}
+
 func TestSendPasswordResetEmailRejectsCRLFInjection(t *testing.T) {
 	setSMTPEnv(t)
 

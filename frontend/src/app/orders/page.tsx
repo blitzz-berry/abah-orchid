@@ -10,6 +10,7 @@ import Navbar from "@/components/ui/Navbar";
 import Footer from "@/components/ui/Footer";
 import { OrderListSkeleton, Skeleton } from "@/components/ui/loading";
 import api from "@/lib/api";
+import { isOrderRefreshEvent, onRealtimeEvent } from "@/lib/realtime";
 import { resolveUploadURL } from "@/lib/uploads";
 import type { Order } from "@/types";
 
@@ -66,6 +67,16 @@ export default function OrdersPage() {
 
     void fetchOrders();
   }, [isAuthenticated, router]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    return onRealtimeEvent((event) => {
+      if (!isOrderRefreshEvent(event)) return;
+      void api.get("/orders").then((response) => {
+        setOrders(response.data.data || []);
+      }).catch(() => undefined);
+    });
+  }, [isAuthenticated]);
 
   const filteredOrders = orders.filter((order) => {
     if (filterStatus && order.status !== filterStatus) return false;

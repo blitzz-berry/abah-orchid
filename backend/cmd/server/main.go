@@ -16,6 +16,7 @@ import (
 	"orchidmart-backend/internal/pkg/appcache"
 	"orchidmart-backend/internal/pkg/midtrans"
 	"orchidmart-backend/internal/pkg/rajaongkir"
+	"orchidmart-backend/internal/pkg/realtime"
 	"orchidmart-backend/internal/pkg/storage"
 	"orchidmart-backend/internal/repository"
 	"orchidmart-backend/internal/service"
@@ -56,6 +57,8 @@ func main() {
 	// Dependency Injection
 	dataCache := appcache.NewFromEnv()
 	rajaongkir.SetCache(dataCache)
+	eventHub := realtime.NewHub()
+	eventHandler := realtime.NewHandler(eventHub)
 
 	userRepo := repository.NewUserRepository(config.DB)
 	authSvc := service.NewAuthService(userRepo)
@@ -70,8 +73,8 @@ func main() {
 	cartHandler := handler.NewCartHandler(cartSvc)
 
 	orderRepo := repository.NewOrderRepository(config.DB)
-	orderSvc := service.NewOrderServiceWithDB(orderRepo, cartRepo, config.DB, dataCache)
-	orderHandler := handler.NewOrderHandler(orderSvc, config.DB)
+	orderSvc := service.NewRealtimeOrderServiceWithDB(orderRepo, cartRepo, config.DB, eventHub, dataCache)
+	orderHandler := handler.NewRealtimeOrderHandler(orderSvc, config.DB, eventHub)
 	uploadHandler := handler.NewUploadHandler(config.DB, orderSvc, dataCache)
 	reviewRepo := repository.NewReviewRepository(config.DB)
 	reviewSvc := service.NewReviewService(reviewRepo, orderRepo)
@@ -79,7 +82,7 @@ func main() {
 
 	shippingHandler := handler.NewShippingHandler()
 	notificationHandler := handler.NewNotificationHandler(config.DB)
-	adminHandler := handler.NewAdminHandler(config.DB, orderSvc, dataCache)
+	adminHandler := handler.NewRealtimeAdminHandler(config.DB, orderSvc, eventHub, dataCache)
 	if os.Getenv("PAYMENT_EXPIRY_WORKER") == "true" {
 		go func() {
 			ticker := time.NewTicker(15 * time.Minute)
@@ -114,6 +117,7 @@ func main() {
 			}
 			c.JSON(http.StatusOK, gin.H{"status": "ready"})
 		})
+		api.GET("/events", middleware.AuthMiddleware(), eventHandler.Stream)
 
 		authRoutes := api.Group("/auth")
 		{

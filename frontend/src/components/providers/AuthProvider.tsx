@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
+import RealtimeProvider from "@/components/providers/RealtimeProvider";
 
 export default function AuthProvider({ children }: { children: React.ReactNode }) {
   const hydrate = useAuthStore((s) => s.hydrate);
@@ -10,5 +11,10 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     void hydrate();
   }, [hydrate]);
 
-  return <>{children}</>;
+  return (
+    <>
+      {children}
+      <RealtimeProvider />
+    </>
+  );
 }

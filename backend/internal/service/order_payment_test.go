@@ -92,3 +92,16 @@ func TestTrustedPaymentProofURL(t *testing.T) {
 		})
 	}
 }
+
+func TestHasConfirmedPaymentStatusPreventsDuplicateConfirmationEmail(t *testing.T) {
+	for _, status := range []string{"PAID", "PROCESSING", "SHIPPED", "DELIVERED", "COMPLETED", "REFUNDED"} {
+		if !hasConfirmedPaymentStatus(status) {
+			t.Fatalf("hasConfirmedPaymentStatus(%q) = false, want true", status)
+		}
+	}
+	for _, status := range []string{"PENDING_PAYMENT", "CANCELLED", "CANCELLATION_REQUESTED"} {
+		if hasConfirmedPaymentStatus(status) {
+			t.Fatalf("hasConfirmedPaymentStatus(%q) = true, want false", status)
+		}
+	}
+}

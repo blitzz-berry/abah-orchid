@@ -18,10 +18,11 @@ import {
   CheckCheck,
 } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PageSpinner } from "@/components/ui/loading";
 import { AnimatePresence, motion } from "framer-motion";
 import api from "@/lib/api";
+import { onRealtimeEvent } from "@/lib/realtime";
 import type { Notification } from "@/types";
 
 const sidebarLinks = [
@@ -41,6 +42,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [notificationOpen, setNotificationOpen] = useState(false);
+  const notificationContainersRef = useRef<Array<HTMLDivElement | null>>([]);
   const unreadReturnCount = notifications.filter((notification) => isUnreadReturnNotification(notification)).length;
   const hasUnreadReturnNotification = unreadReturnCount > 0;
 
@@ -84,6 +86,29 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       window.clearInterval(timer);
     };
   }, [isAuthenticated, isHydrated, user]);
+
+  useEffect(() => {
+    if (!isHydrated || !isAuthenticated || user?.role !== "admin") return;
+    return onRealtimeEvent((event) => {
+      if (event.type !== "notification.created") return;
+      void api.get("/notifications").then((response) => {
+        const payload = response.data.data || response.data;
+        setNotifications(payload.notifications || []);
+        setUnreadCount(payload.unread_count || 0);
+      }).catch(() => undefined);
+    });
+  }, [isAuthenticated, isHydrated, user]);
+
+  useEffect(() => {
+    if (!notificationOpen) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (notificationContainersRef.current.some((container) => container?.contains(target))) return;
+      setNotificationOpen(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [notificationOpen]);
 
   const isActive = (href: string) => {
     if (href === "/admin") return pathname === "/admin";
@@ -134,7 +159,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <span className="font-bold text-lg">OrchidAdmin</span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="relative">
+          <div ref={(node) => { notificationContainersRef.current[0] = node; }} className="relative">
             <button
               onClick={() => setNotificationOpen((open) => !open)}
               className={`relative rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-zinc-900 ${hasUnreadReturnNotification ? "bg-orange-50 text-orange-700 dark:bg-orange-950/30 dark:text-orange-200" : ""}`}
@@ -183,7 +208,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <div className="hidden md:flex items-center gap-2 mb-8">
           <Leaf className="w-7 h-7 text-[var(--color-leaf-500)]" />
           <h2 className="text-xl font-extrabold tracking-tight">OrchidAdmin</h2>
-          <div className="ml-auto relative">
+          <div ref={(node) => { notificationContainersRef.current[1] = node; }} className="ml-auto relative">
             <button
               onClick={() => setNotificationOpen((open) => !open)}
               className={`relative rounded-xl p-2 hover:bg-gray-100 dark:hover:bg-zinc-900 ${hasUnreadReturnNotification ? "bg-orange-50 text-orange-700 dark:bg-orange-950/30 dark:text-orange-200" : ""}`}

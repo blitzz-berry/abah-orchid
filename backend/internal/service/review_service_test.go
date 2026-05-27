@@ -95,8 +95,8 @@ func (r *fakeOrderRepo) CancelOrderWithTx(string, string) error {
 	return nil
 }
 
-func (r *fakeOrderRepo) ExpirePendingPayments(time.Time) (int64, error) {
-	return 0, nil
+func (r *fakeOrderRepo) ExpirePendingPayments(time.Time) ([]string, error) {
+	return nil, nil
 }
 
 func (r *fakeOrderRepo) RequestReturn(string, string, string) error {

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -14,6 +15,8 @@ import (
 	"orchidmart-backend/internal/dto/request"
 	"orchidmart-backend/internal/model"
 	"orchidmart-backend/internal/pkg/appcache"
+	mailerPkg "orchidmart-backend/internal/pkg/mailer"
+	"orchidmart-backend/internal/pkg/realtime"
 	"orchidmart-backend/internal/service"
 )
 
@@ -21,6 +24,7 @@ type AdminHandler struct {
 	db           *gorm.DB
 	orderService service.OrderService
 	cache        appcache.Store
+	events       *realtime.Hub
 }
 
 type salesPoint struct {
@@ -37,11 +41,19 @@ type topProduct struct {
 }
 
 func NewAdminHandler(db *gorm.DB, orderService service.OrderService, stores ...appcache.Store) *AdminHandler {
+	return newAdminHandler(db, orderService, nil, stores...)
+}
+
+func NewRealtimeAdminHandler(db *gorm.DB, orderService service.OrderService, events *realtime.Hub, stores ...appcache.Store) *AdminHandler {
+	return newAdminHandler(db, orderService, events, stores...)
+}
+
+func newAdminHandler(db *gorm.DB, orderService service.OrderService, events *realtime.Hub, stores ...appcache.Store) *AdminHandler {
 	store := appcache.Disabled()
 	if len(stores) > 0 && stores[0] != nil {
 		store = stores[0]
 	}
-	return &AdminHandler{db: db, orderService: orderService, cache: store}
+	return &AdminHandler{db: db, orderService: orderService, cache: store, events: events}
 }
 
 func (h *AdminHandler) GetKPI(c *gin.Context) {
@@ -358,6 +370,16 @@ func (h *AdminHandler) UpdateOrderStatus(c *gin.Context) {
 		return
 	}
 	_ = h.createOrderNotification(id, req.Status)
+	switch strings.ToUpper(strings.TrimSpace(req.Status)) {
+	case "SHIPPED":
+		h.sendOrderShippedEmail(id)
+	case "CANCELLED":
+		h.sendOrderCancelledEmail(id, "CANCELLED", "")
+	case "RETURN_APPROVED":
+		h.sendReturnDecisionEmail(id, true, "")
+	case "REFUNDED":
+		h.sendRefundCompletedEmail(id, "", 0)
+	}
 	h.logAdminActivity(c, "UPDATE_STATUS", "order", id, gin.H{"status": req.Status})
 	c.JSON(http.StatusOK, gin.H{"message": "Status updated"})
 }
@@ -394,6 +416,8 @@ func (h *AdminHandler) RefundOrder(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	_ = h.createOrderNotification(c.Param("id"), "REFUNDED")
+	h.sendRefundCompletedEmail(c.Param("id"), req.Reason, req.Amount)
 	h.logAdminActivity(c, "REFUND", "order", c.Param("id"), gin.H{"amount": req.Amount, "reason": req.Reason})
 	c.JSON(http.StatusOK, gin.H{"message": "Order refunded"})
 }
@@ -412,6 +436,7 @@ func (h *AdminHandler) CancelOrder(c *gin.Context) {
 	}
 
 	_ = h.createOrderNotification(c.Param("id"), status)
+	h.sendOrderCancelledEmail(c.Param("id"), status, req.Reason)
 	h.logAdminActivity(c, "CANCEL_ORDER", "order", c.Param("id"), gin.H{"reason": req.Reason, "result_status": status})
 	c.JSON(http.StatusOK, gin.H{"message": "Order cancellation processed", "data": gin.H{"status": status}})
 }
@@ -430,6 +455,7 @@ func (h *AdminHandler) ApproveCancellation(c *gin.Context) {
 	}
 
 	_ = h.createOrderNotification(c.Param("id"), status)
+	h.sendCancellationDecisionEmail(c.Param("id"), true, status, req.Reason)
 	h.logAdminActivity(c, "APPROVE_CANCELLATION", "order", c.Param("id"), gin.H{"reason": req.Reason, "result_status": status})
 	c.JSON(http.StatusOK, gin.H{"message": "Cancellation approved", "data": gin.H{"status": status}})
 }
@@ -448,6 +474,7 @@ func (h *AdminHandler) RejectCancellation(c *gin.Context) {
 	}
 
 	_ = h.createOrderNotification(c.Param("id"), status)
+	h.sendCancellationDecisionEmail(c.Param("id"), false, status, req.Reason)
 	h.logAdminActivity(c, "REJECT_CANCELLATION", "order", c.Param("id"), gin.H{"reason": req.Reason, "restored_status": status})
 	c.JSON(http.StatusOK, gin.H{"message": "Cancellation rejected", "data": gin.H{"status": status}})
 }
@@ -466,6 +493,7 @@ func (h *AdminHandler) ApproveReturn(c *gin.Context) {
 	}
 
 	_ = h.createOrderNotification(c.Param("id"), status)
+	h.sendReturnDecisionEmail(c.Param("id"), true, req.Reason)
 	h.logAdminActivity(c, "APPROVE_RETURN", "order", c.Param("id"), gin.H{"reason": req.Reason, "result_status": status})
 	c.JSON(http.StatusOK, gin.H{"message": "Return approved", "data": gin.H{"status": status}})
 }
@@ -484,6 +512,7 @@ func (h *AdminHandler) RejectReturn(c *gin.Context) {
 	}
 
 	_ = h.createReturnRejectionNotification(c.Param("id"), status, req.Reason)
+	h.sendReturnDecisionEmail(c.Param("id"), false, req.Reason)
 	h.logAdminActivity(c, "REJECT_RETURN", "order", c.Param("id"), gin.H{"reason": req.Reason, "restored_status": status})
 	c.JSON(http.StatusOK, gin.H{"message": "Return rejected", "data": gin.H{"status": status}})
 }
@@ -521,6 +550,7 @@ func (h *AdminHandler) UpdateOrderTracking(c *gin.Context) {
 		return
 	}
 	_ = h.createOrderNotification(id, "SHIPPED")
+	h.sendOrderShippedEmail(id)
 	h.logAdminActivity(c, "UPDATE_TRACKING", "order", id, gin.H{"tracking_number": req.TrackingNumber})
 	c.JSON(http.StatusOK, gin.H{"message": "Tracking updated"})
 }
@@ -1077,22 +1107,35 @@ func (h *AdminHandler) invalidateCatalog() {
 }
 
 func (h *AdminHandler) createOrderNotification(orderID string, status string) error {
+	if h.db == nil {
+		return nil
+	}
 	var order model.Order
 	if err := h.db.Where("id = ?", orderID).First(&order).Error; err != nil {
 		return err
 	}
 	title, message := orderNotificationContent(order.OrderNumber, status)
-	return h.db.Create(&model.Notification{
+	notification := model.Notification{
 		UserID:        order.UserID,
 		Type:          "order_status",
 		Title:         title,
 		Message:       message,
 		ReferenceType: "order",
 		ReferenceID:   order.ID,
-	}).Error
+	}
+	if err := h.db.Create(&notification).Error; err != nil {
+		return err
+	}
+	if h.events != nil {
+		h.events.NotificationCreated(order.UserID.String(), order.ID.String())
+	}
+	return nil
 }
 
 func (h *AdminHandler) createReturnRejectionNotification(orderID, restoredStatus, reason string) error {
+	if h.db == nil {
+		return nil
+	}
 	var order model.Order
 	if err := h.db.Where("id = ?", orderID).First(&order).Error; err != nil {
 		return err
@@ -1106,14 +1149,77 @@ func (h *AdminHandler) createReturnRejectionNotification(orderID, restoredStatus
 		message += " Status pesanan dikembalikan ke " + restoredStatus + "."
 	}
 
-	return h.db.Create(&model.Notification{
+	notification := model.Notification{
 		UserID:        order.UserID,
 		Type:          "order_status",
 		Title:         "Pengajuan retur ditolak",
 		Message:       message,
 		ReferenceType: "order",
 		ReferenceID:   order.ID,
-	}).Error
+	}
+	if err := h.db.Create(&notification).Error; err != nil {
+		return err
+	}
+	if h.events != nil {
+		h.events.NotificationCreated(order.UserID.String(), order.ID.String())
+	}
+	return nil
+}
+
+func (h *AdminHandler) sendOrderShippedEmail(orderID string) {
+	h.sendCustomerEmail(orderID, "shipping", func(order model.Order) error {
+		return mailerPkg.SendOrderShippedEmail(
+			order.User.Email,
+			order.User.FullName,
+			order.OrderNumber,
+			order.CourierCode,
+			order.TrackingNumber,
+		)
+	})
+}
+
+func (h *AdminHandler) sendOrderCancelledEmail(orderID, resultStatus, reason string) {
+	h.sendCustomerEmail(orderID, "cancellation", func(order model.Order) error {
+		return mailerPkg.SendOrderCancelledEmail(order.User.Email, order.User.FullName, order.OrderNumber, resultStatus, reason)
+	})
+}
+
+func (h *AdminHandler) sendCancellationDecisionEmail(orderID string, approved bool, resultStatus, reason string) {
+	h.sendCustomerEmail(orderID, "cancellation decision", func(order model.Order) error {
+		return mailerPkg.SendCancellationDecisionEmail(order.User.Email, order.User.FullName, order.OrderNumber, approved, resultStatus, reason)
+	})
+}
+
+func (h *AdminHandler) sendReturnDecisionEmail(orderID string, approved bool, reason string) {
+	h.sendCustomerEmail(orderID, "return decision", func(order model.Order) error {
+		return mailerPkg.SendReturnDecisionEmail(order.User.Email, order.User.FullName, order.OrderNumber, approved, reason)
+	})
+}
+
+func (h *AdminHandler) sendRefundCompletedEmail(orderID, reason string, amount float64) {
+	h.sendCustomerEmail(orderID, "refund", func(order model.Order) error {
+		return mailerPkg.SendRefundCompletedEmail(order.User.Email, order.User.FullName, order.OrderNumber, reason, amount)
+	})
+}
+
+func (h *AdminHandler) sendCustomerEmail(orderID, eventName string, send func(model.Order) error) {
+	if h.db == nil {
+		return
+	}
+	var order model.Order
+	if err := h.db.Preload("User").Where("id = ?", orderID).First(&order).Error; err != nil {
+		log.Printf("%s email lookup failed for order %s: %v", eventName, orderID, err)
+		return
+	}
+	if strings.TrimSpace(order.User.Email) == "" {
+		return
+	}
+	go func(order model.Order) {
+		err := send(order)
+		if err != nil && !errors.Is(err, mailerPkg.ErrMailerNotConfigured) {
+			log.Printf("%s email failed for order %s: %v", eventName, order.ID.String(), err)
+		}
+	}(order)
 }
 
 func orderNotificationContent(orderNumber string, status string) (string, string) {

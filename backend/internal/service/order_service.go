@@ -19,6 +19,7 @@ import (
 	"orchidmart-backend/internal/dto/request"
 	"orchidmart-backend/internal/model"
 	"orchidmart-backend/internal/pkg/appcache"
+	mailerPkg "orchidmart-backend/internal/pkg/mailer"
 	midtransPkg "orchidmart-backend/internal/pkg/midtrans"
 	"orchidmart-backend/internal/pkg/rajaongkir"
 	"orchidmart-backend/internal/repository"
@@ -46,11 +47,17 @@ type OrderService interface {
 	HandleMidtransWebhook(payload map[string]interface{}) error
 }
 
+type OrderEventPublisher interface {
+	OrderChanged(userID, orderID, status string)
+	PaymentChanged(userID, orderID, status string)
+}
+
 type orderService struct {
 	orderRepo repository.OrderRepository
 	cartRepo  repository.CartRepository
 	db        *gorm.DB
 	cache     appcache.Store
+	events    OrderEventPublisher
 }
 
 func NewOrderService(orderRepo repository.OrderRepository, cartRepo repository.CartRepository, stores ...appcache.Store) OrderService {
@@ -59,6 +66,10 @@ func NewOrderService(orderRepo repository.OrderRepository, cartRepo repository.C
 
 func NewOrderServiceWithDB(orderRepo repository.OrderRepository, cartRepo repository.CartRepository, db *gorm.DB, stores ...appcache.Store) OrderService {
 	return &orderService{orderRepo: orderRepo, cartRepo: cartRepo, db: db, cache: optionalCache(stores)}
+}
+
+func NewRealtimeOrderServiceWithDB(orderRepo repository.OrderRepository, cartRepo repository.CartRepository, db *gorm.DB, events OrderEventPublisher, stores ...appcache.Store) OrderService {
+	return &orderService{orderRepo: orderRepo, cartRepo: cartRepo, db: db, cache: optionalCache(stores), events: events}
 }
 
 func (s *orderService) Checkout(userID string, req request.CheckoutRequest) (*model.Order, string, error) {
@@ -185,6 +196,8 @@ func (s *orderService) Checkout(userID string, req request.CheckoutRequest) (*mo
 		if err := s.orderRepo.CreateOrUpdatePayment(&payment); err != nil {
 			return nil, "", err
 		}
+		s.publishOrderChanged(order.UserID.String(), order.ID.String(), order.Status)
+		s.publishPaymentChanged(order.UserID.String(), order.ID.String(), payment.Status)
 		return order, "", nil
 	}
 
@@ -229,6 +242,8 @@ func (s *orderService) Checkout(userID string, req request.CheckoutRequest) (*mo
 		return nil, "", err
 	}
 
+	s.publishOrderChanged(order.UserID.String(), order.ID.String(), order.Status)
+	s.publishPaymentChanged(order.UserID.String(), order.ID.String(), payment.Status)
 	return order, snapResp.RedirectURL, nil
 }
 
@@ -442,10 +457,15 @@ func (s *orderService) UpdateOrderStatus(orderID string, status string) error {
 		err := s.orderRepo.CancelOrderWithTx(orderID, "Order cancelled")
 		if err == nil {
 			s.invalidateCatalog()
+			s.publishOrderChanged(order.UserID.String(), orderID, status)
 		}
 		return err
 	}
-	return s.orderRepo.UpdateOrderStatus(orderID, status)
+	if err := s.orderRepo.UpdateOrderStatus(orderID, status); err != nil {
+		return err
+	}
+	s.publishOrderChanged(order.UserID.String(), orderID, status)
+	return nil
 }
 
 func normalizeOrderStatus(status string) string {
@@ -481,7 +501,11 @@ func canTransitionOrder(from, to string) bool {
 }
 
 func (s *orderService) ConfirmDelivery(orderID, userID string) error {
-	return s.orderRepo.ConfirmDelivery(orderID, userID)
+	if err := s.orderRepo.ConfirmDelivery(orderID, userID); err != nil {
+		return err
+	}
+	s.publishOrderChanged(userID, orderID, "COMPLETED")
+	return nil
 }
 
 func (s *orderService) CancelOrder(orderID, userID, reason string) (string, error) {
@@ -500,6 +524,7 @@ func (s *orderService) CancelOrder(orderID, userID, reason string) (string, erro
 			return "", err
 		}
 		s.invalidateCatalog()
+		s.publishOrderChanged(userID, orderID, "CANCELLED")
 		return "CANCELLED", nil
 	case "PAID", "PROCESSING":
 		if reason == "" {
@@ -508,6 +533,7 @@ func (s *orderService) CancelOrder(orderID, userID, reason string) (string, erro
 		if err := s.orderRepo.RequestCancellation(orderID, userID, reason); err != nil {
 			return "", err
 		}
+		s.publishOrderChanged(userID, orderID, "CANCELLATION_REQUESTED")
 		return "CANCELLATION_REQUESTED", nil
 	case "CANCELLATION_REQUESTED":
 		return "", errors.New("cancellation request has already been submitted")
@@ -532,12 +558,15 @@ func (s *orderService) AdminCancelOrder(orderID, reason string) (string, error) 
 			return "", err
 		}
 		s.invalidateCatalog()
+		s.publishOrderChanged(order.UserID.String(), orderID, "CANCELLED")
 		return "CANCELLED", nil
 	case "PAID", "PROCESSING":
 		if err := s.orderRepo.RefundOrder(orderID, reason, order.Total); err != nil {
 			return "", err
 		}
 		s.invalidateCatalog()
+		s.publishOrderChanged(order.UserID.String(), orderID, "REFUNDED")
+		s.publishPaymentChanged(order.UserID.String(), orderID, "REFUNDED")
 		return "REFUNDED", nil
 	case "CANCELLATION_REQUESTED":
 		return s.ApproveCancellation(orderID, reason)
@@ -569,12 +598,15 @@ func (s *orderService) ApproveCancellation(orderID, reason string) (string, erro
 			return "", err
 		}
 		s.invalidateCatalog()
+		s.publishOrderChanged(order.UserID.String(), orderID, "CANCELLED")
 		return "CANCELLED", nil
 	case "PAID", "PROCESSING":
 		if err := s.orderRepo.RefundOrder(orderID, reason, order.Total); err != nil {
 			return "", err
 		}
 		s.invalidateCatalog()
+		s.publishOrderChanged(order.UserID.String(), orderID, "REFUNDED")
+		s.publishPaymentChanged(order.UserID.String(), orderID, "REFUNDED")
 		return "REFUNDED", nil
 	default:
 		return "", errors.New("cancellation request origin status is invalid")
@@ -585,7 +617,15 @@ func (s *orderService) RejectCancellation(orderID, reason string) (string, error
 	if strings.TrimSpace(reason) == "" {
 		return "", errors.New("rejection reason is required")
 	}
-	return s.orderRepo.RejectCancellation(orderID, reason)
+	order, err := s.orderRepo.GetOrderByID(orderID)
+	if err != nil {
+		return "", err
+	}
+	status, err := s.orderRepo.RejectCancellation(orderID, reason)
+	if err == nil {
+		s.publishOrderChanged(order.UserID.String(), orderID, status)
+	}
+	return status, err
 }
 
 func (s *orderService) ApproveReturn(orderID, reason string) (string, error) {
@@ -596,7 +636,11 @@ func (s *orderService) ApproveReturn(orderID, reason string) (string, error) {
 	if order.Status != "RETURN_REQUESTED" {
 		return "", errors.New("order is not waiting for return review")
 	}
-	return s.orderRepo.ApproveReturn(orderID, reason)
+	status, err := s.orderRepo.ApproveReturn(orderID, reason)
+	if err == nil {
+		s.publishOrderChanged(order.UserID.String(), orderID, status)
+	}
+	return status, err
 }
 
 func (s *orderService) RejectReturn(orderID, reason string) (string, error) {
@@ -610,7 +654,11 @@ func (s *orderService) RejectReturn(orderID, reason string) (string, error) {
 	if order.Status != "RETURN_REQUESTED" {
 		return "", errors.New("order is not waiting for return review")
 	}
-	return s.orderRepo.RejectReturn(orderID, reason)
+	status, err := s.orderRepo.RejectReturn(orderID, reason)
+	if err == nil {
+		s.publishOrderChanged(order.UserID.String(), orderID, status)
+	}
+	return status, err
 }
 
 func (s *orderService) InitiatePayment(orderID, userID string) (*model.Payment, error) {
@@ -678,6 +726,7 @@ func (s *orderService) InitiatePayment(orderID, userID string) (*model.Payment, 
 		return nil, err
 	}
 
+	s.publishPaymentChanged(order.UserID.String(), orderID, payment.Status)
 	return payment, nil
 }
 
@@ -713,6 +762,7 @@ func (s *orderService) UploadPaymentProof(orderID, userID, proofImageURL string)
 	if err := s.orderRepo.CreateOrUpdatePayment(payment); err != nil {
 		return nil, err
 	}
+	s.publishPaymentChanged(order.UserID.String(), orderID, payment.Status)
 	return payment, nil
 }
 
@@ -732,6 +782,7 @@ func (s *orderService) ConfirmManualPayment(orderID string) error {
 	if err != nil {
 		return err
 	}
+	shouldSendPaymentEmail := !hasConfirmedPaymentStatus(order.Status)
 
 	now := time.Now()
 	payment := &model.Payment{
@@ -746,22 +797,37 @@ func (s *orderService) ConfirmManualPayment(orderID string) error {
 	if err := s.orderRepo.CreateOrUpdatePayment(payment); err != nil {
 		return err
 	}
-	return s.orderRepo.CompletePaymentWithTx(payment)
+	if err := s.orderRepo.CompletePaymentWithTx(payment); err != nil {
+		return err
+	}
+	s.publishOrderChanged(order.UserID.String(), orderID, "PAID")
+	s.publishPaymentChanged(order.UserID.String(), orderID, "PAID")
+	if shouldSendPaymentEmail {
+		s.sendPaymentConfirmedEmail(order)
+	}
+	return nil
 }
 
 func (s *orderService) ExpirePendingPayments() (int64, error) {
-	count, err := s.orderRepo.ExpirePendingPayments(time.Now())
-	if err == nil && count > 0 {
+	orderIDs, err := s.orderRepo.ExpirePendingPayments(time.Now())
+	if len(orderIDs) > 0 {
 		s.invalidateCatalog()
+		for _, orderID := range orderIDs {
+			s.publishChangedForOrder(orderID, "CANCELLED", "EXPIRED")
+		}
 	}
-	return count, err
+	return int64(len(orderIDs)), err
 }
 
 func (s *orderService) RequestReturn(orderID, userID, reason string) error {
 	if strings.TrimSpace(reason) == "" {
 		return errors.New("return reason is required")
 	}
-	return s.orderRepo.RequestReturn(orderID, userID, reason)
+	if err := s.orderRepo.RequestReturn(orderID, userID, reason); err != nil {
+		return err
+	}
+	s.publishOrderChanged(userID, orderID, "RETURN_REQUESTED")
+	return nil
 }
 
 func (s *orderService) RefundOrder(orderID, reason string, amount float64) error {
@@ -771,6 +837,7 @@ func (s *orderService) RefundOrder(orderID, reason string, amount float64) error
 	err := s.orderRepo.RefundOrder(orderID, reason, amount)
 	if err == nil {
 		s.invalidateCatalog()
+		s.publishChangedForOrder(orderID, "REFUNDED", "REFUNDED")
 	}
 	return err
 }
@@ -878,6 +945,7 @@ func (s *orderService) HandleMidtransWebhook(payload map[string]interface{}) err
 		if err != nil {
 			return err
 		}
+		shouldSendPaymentEmail := !hasConfirmedPaymentStatus(order.Status)
 		if grossAmount == "" {
 			return errors.New("invalid gross_amount in webhook")
 		}
@@ -898,7 +966,15 @@ func (s *orderService) HandleMidtransWebhook(payload map[string]interface{}) err
 			ExternalID: orderID,
 		}
 
-		return s.orderRepo.CompletePaymentWithTx(payment)
+		if err := s.orderRepo.CompletePaymentWithTx(payment); err != nil {
+			return err
+		}
+		s.publishOrderChanged(order.UserID.String(), orderID, "PAID")
+		s.publishPaymentChanged(order.UserID.String(), orderID, "PAID")
+		if shouldSendPaymentEmail {
+			s.sendPaymentConfirmedEmail(order)
+		}
+		return nil
 	} else if transactionStatus == "cancel" || transactionStatus == "deny" || transactionStatus == "expire" {
 		payment := &model.Payment{
 			OrderID:       orderUUID(orderID),
@@ -914,6 +990,7 @@ func (s *orderService) HandleMidtransWebhook(payload map[string]interface{}) err
 		err := s.orderRepo.CancelOrderWithTx(orderID, transactionStatus)
 		if err == nil {
 			s.invalidateCatalog()
+			s.publishChangedForOrder(orderID, "CANCELLED", "EXPIRED")
 		}
 		return err
 	}
@@ -938,4 +1015,54 @@ func optionalCache(stores []appcache.Store) appcache.Store {
 
 func (s *orderService) invalidateCatalog() {
 	s.cache.DeletePrefix(appcache.CatalogPrefix)
+}
+
+func (s *orderService) publishOrderChanged(userID, orderID, status string) {
+	if s.events != nil {
+		s.events.OrderChanged(userID, orderID, status)
+	}
+}
+
+func (s *orderService) publishPaymentChanged(userID, orderID, status string) {
+	if s.events != nil {
+		s.events.PaymentChanged(userID, orderID, status)
+	}
+}
+
+func (s *orderService) publishChangedForOrder(orderID, orderStatus, paymentStatus string) {
+	if s.events == nil {
+		return
+	}
+	order, err := s.orderRepo.GetOrderByID(orderID)
+	if err != nil {
+		return
+	}
+	if orderStatus != "" {
+		s.publishOrderChanged(order.UserID.String(), orderID, orderStatus)
+	}
+	if paymentStatus != "" {
+		s.publishPaymentChanged(order.UserID.String(), orderID, paymentStatus)
+	}
+}
+
+func hasConfirmedPaymentStatus(status string) bool {
+	switch normalizeOrderStatus(status) {
+	case "PAID", "PROCESSING", "SHIPPED", "DELIVERED", "COMPLETED", "RETURN_REQUESTED", "RETURN_APPROVED", "REFUNDED":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *orderService) sendPaymentConfirmedEmail(order *model.Order) {
+	if order == nil || strings.TrimSpace(order.User.Email) == "" {
+		return
+	}
+	orderCopy := *order
+	go func() {
+		err := mailerPkg.SendPaymentConfirmedEmail(orderCopy.User.Email, orderCopy.User.FullName, orderCopy.OrderNumber, orderCopy.Total)
+		if err != nil && !errors.Is(err, mailerPkg.ErrMailerNotConfigured) {
+			log.Printf("payment confirmation email failed for order %s: %v", orderCopy.ID.String(), err)
+		}
+	}()
 }

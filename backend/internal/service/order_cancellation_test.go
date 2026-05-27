@@ -101,8 +101,8 @@ func (r *fakeCancellationOrderRepo) CancelOrderWithTx(orderID, reason string) er
 	return r.cancelErr
 }
 
-func (r *fakeCancellationOrderRepo) ExpirePendingPayments(_ time.Time) (int64, error) {
-	return 0, nil
+func (r *fakeCancellationOrderRepo) ExpirePendingPayments(_ time.Time) ([]string, error) {
+	return nil, nil
 }
 
 func (r *fakeCancellationOrderRepo) RequestReturn(string, string, string) error {
@@ -119,7 +119,7 @@ func (r *fakeCancellationOrderRepo) RefundOrder(orderID, reason string, amount f
 type fakeCancellationCartRepo struct{}
 
 func (r *fakeCancellationCartRepo) GetCartByUserID(string) (*model.Cart, error) { return nil, nil }
-func (r *fakeCancellationCartRepo) AddToCart(*model.CartItem) error              { return nil }
+func (r *fakeCancellationCartRepo) AddToCart(*model.CartItem) error             { return nil }
 func (r *fakeCancellationCartRepo) UpdateCartItemQuantity(string, string, int) error {
 	return nil
 }
@@ -208,7 +208,7 @@ func TestApproveCancellationUsesStoredReasonAndRefundsPaidOrder(t *testing.T) {
 		order: &model.Order{
 			Status:                          "CANCELLATION_REQUESTED",
 			Total:                           99000,
-			CancellationReason:             "Mau ganti warna",
+			CancellationReason:              "Mau ganti warna",
 			CancellationRequestedFromStatus: "PAID",
 		},
 	}

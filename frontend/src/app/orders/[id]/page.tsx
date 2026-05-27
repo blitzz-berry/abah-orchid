@@ -8,6 +8,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import Navbar from "@/components/ui/Navbar";
 import Footer from "@/components/ui/Footer";
 import api from "@/lib/api";
+import { isOrderRefreshEvent, onRealtimeEvent } from "@/lib/realtime";
 import { openUploadURL, resolveUploadURL } from "@/lib/uploads";
 import { OrderListSkeleton, Skeleton, Spinner } from "@/components/ui/loading";
 import { motion } from "framer-motion";
@@ -80,6 +81,27 @@ export default function OrderDetailPage() {
   const proofImageURL = activePayment?.proof_image_url ? resolveUploadURL(activePayment.proof_image_url) : "";
   const proofUploadMessage = getProofUploadMessage(order?.status || "", activePayment);
   const orderID = typeof id === "string" ? id : Array.isArray(id) ? id[0] : "";
+
+  useEffect(() => {
+    if (!isAuthenticated || !orderID) return;
+    return onRealtimeEvent((event) => {
+      if (!isOrderRefreshEvent(event, orderID)) return;
+      void Promise.allSettled([
+        api.get(`/orders/${orderID}`),
+        api.get(`/payments/${orderID}/status`),
+      ]).then(([orderResponse, paymentResponse]) => {
+        if (orderResponse.status === "fulfilled") {
+          const nextOrder = orderResponse.value.data.data || orderResponse.value.data;
+          setOrder(nextOrder);
+          setPayment(nextOrder.payments?.[0] || nextOrder.payment || null);
+        }
+        if (paymentResponse.status === "fulfilled") {
+          setPayment(paymentResponse.value.data.data || null);
+        }
+      });
+    });
+  }, [isAuthenticated, orderID]);
+
   const sortedStatusHistory = [...(order?.status_history || [])].sort((a, b) => {
     const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
     const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
