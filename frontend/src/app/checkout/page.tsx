@@ -96,6 +96,15 @@ const courierOptions = [
   { value: "pos", label: "POS" },
 ];
 
+const defaultCourier = "jne";
+
+const normalizeLocationName = (value?: string) =>
+  (value || "")
+    .toLowerCase()
+    .replace(/\b(kota|kabupaten|kab\.?|kodya)\b/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
 const readRajaResults = <T,>(payload: unknown): T[] => {
   const data = payload as { rajaongkir?: { results?: T[] }; data?: T[] };
   if (Array.isArray(data.rajaongkir?.results)) return data.rajaongkir.results;
@@ -215,6 +224,7 @@ export default function CheckoutPage() {
       shipping_address: selectedAddress.full_address,
       province_id: matchedProvince?.province_id || selectedAddress.province_id || "",
       city_id: "",
+      courier: prev.courier || defaultCourier,
       shipping_cost: 0,
       courier_service: "",
     }));
@@ -234,9 +244,11 @@ export default function CheckoutPage() {
         setCities(nextCities);
 
         if (!selectedAddress) return;
+        const selectedAddressCity = normalizeLocationName(selectedAddress.city);
         const matchedCity = nextCities.find((city) =>
           city.city_id === selectedAddress.city_id ||
-          city.city_name.toLowerCase() === selectedAddress.city.toLowerCase(),
+          normalizeLocationName(city.city_name) === selectedAddressCity ||
+          normalizeLocationName(`${city.type} ${city.city_name}`) === selectedAddressCity,
         );
         if (matchedCity) {
           setFormData((prev) => ({ ...prev, city_id: matchedCity.city_id }));

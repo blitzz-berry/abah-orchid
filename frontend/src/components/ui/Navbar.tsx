@@ -136,9 +136,9 @@ export default function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2 shrink-0">
-            <img src="/images/anggrek.png" alt="Logo" className="w-8 h-8 object-contain" />
-            <span className="text-xl font-bold tracking-tight">
+          <Link href="/" className="flex min-w-0 shrink items-center gap-2">
+            <img src="/images/anggrek.png" alt="Logo" className="h-8 w-8 shrink-0 object-contain" />
+            <span className="truncate text-lg font-bold tracking-tight min-[380px]:text-xl">
               Abah<span className="text-[var(--color-leaf-600)]">Orchid</span>
             </span>
           </Link>
@@ -173,7 +173,7 @@ export default function Navbar() {
           </div>
 
           {/* Right Actions */}
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1 min-[380px]:gap-2">
             {isAuthenticated && user?.role !== "admin" && (
               <div ref={notificationContainerRef} className="relative">
                 <button
@@ -194,11 +194,11 @@ export default function Navbar() {
                       initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: 8 }}
-                      className="absolute right-0 mt-2 w-[360px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-zinc-950"
+                      className="fixed left-3 right-3 top-20 max-h-[calc(100dvh-6rem)] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-zinc-950 sm:left-auto sm:right-4 sm:w-[360px] md:absolute md:right-0 md:left-auto md:top-auto md:mt-2 md:max-h-none md:max-w-[calc(100vw-2rem)] md:rounded-3xl"
                     >
-                      <div className="border-b border-gray-100 p-4 dark:border-gray-800">
-                        <div className="flex items-start justify-between gap-4">
-                          <div>
+                      <div className="border-b border-gray-100 p-3 sm:p-4 dark:border-gray-800">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
                             <div className="text-sm font-bold">Notifikasi</div>
                             <div className="mt-1 text-xs text-gray-500">
                               {unreadCount > 0 ? `${unreadCount} notifikasi belum dibaca` : "Semua notifikasi sudah dibaca"}
@@ -207,9 +207,9 @@ export default function Navbar() {
                           {unreadCount > 0 && (
                             <button
                               onClick={markAllNotificationsRead}
-                              className="inline-flex items-center gap-1 rounded-full bg-[var(--color-brand-50)] px-3 py-1 text-[11px] font-bold text-[var(--color-brand-700)] transition-colors hover:bg-[var(--color-brand-100)] dark:bg-[var(--color-brand-900)]/30 dark:text-[var(--color-brand-200)]"
+                              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[var(--color-brand-50)] px-2.5 py-1 text-[11px] font-bold text-[var(--color-brand-700)] transition-colors hover:bg-[var(--color-brand-100)] dark:bg-[var(--color-brand-900)]/30 dark:text-[var(--color-brand-200)] sm:px-3"
                             >
-                              <CheckCheck className="h-3.5 w-3.5" /> Tandai dibaca
+                              <CheckCheck className="h-3.5 w-3.5" /> <span className="hidden min-[360px]:inline">Tandai dibaca</span><span className="min-[360px]:hidden">Dibaca</span>
                             </button>
                           )}
                         </div>
@@ -238,11 +238,11 @@ export default function Navbar() {
                         </div>
                       </div>
 
-                      <div className="border-b border-gray-100 bg-gradient-to-b from-[var(--color-brand-50)]/70 to-transparent px-4 py-3 dark:border-gray-800 dark:from-[var(--color-brand-900)]/10">
+                      <div className="border-b border-gray-100 bg-gradient-to-b from-[var(--color-brand-50)]/70 to-transparent px-3 py-3 sm:px-4 dark:border-gray-800 dark:from-[var(--color-brand-900)]/10">
                         <div className="flex items-center justify-between rounded-2xl border border-[var(--color-brand-100)] bg-white/90 px-3 py-2 dark:border-[var(--color-brand-900)]/40 dark:bg-zinc-950/80">
-                          <div>
+                          <div className="min-w-0">
                             <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-gray-500">Ringkasan</div>
-                            <div className="mt-1 text-sm font-semibold text-gray-900 dark:text-gray-100">Inbox notifikasi akun</div>
+                            <div className="mt-1 truncate text-sm font-semibold text-gray-900 dark:text-gray-100">Inbox notifikasi akun</div>
                           </div>
                           <div className="rounded-2xl bg-[var(--color-brand-600)] px-3 py-1.5 text-xs font-extrabold text-white">
                             {visibleNotifications.length}
@@ -250,7 +250,7 @@ export default function Navbar() {
                         </div>
                       </div>
 
-                      <div className="max-h-[380px] overflow-y-auto px-2 py-2">
+                      <div className="max-h-[min(380px,calc(100dvh-22rem))] overflow-y-auto px-2 py-2 md:max-h-[380px]">
                         {visibleNotifications.length === 0 ? (
                           <div className="flex flex-col items-center justify-center rounded-2xl px-4 py-10 text-center">
                             <div className="mb-3 rounded-2xl bg-gray-100 p-3 dark:bg-zinc-900">
@@ -281,7 +281,7 @@ export default function Navbar() {
                                   </div>
                                   <div className="min-w-0 flex-1">
                                     <div className="flex items-start justify-between gap-3">
-                                      <div className="min-w-0">
+                                      <div className="min-w-0 flex-1">
                                         <div className="flex items-center gap-2">
                                           <span className="truncate text-sm font-bold">{notification.title}</span>
                                           {!notification.is_read && <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--color-brand-600)]" />}
@@ -290,7 +290,7 @@ export default function Navbar() {
                                           {notification.message}
                                         </div>
                                       </div>
-                                      <span className="shrink-0 text-[11px] font-medium text-gray-400">
+                                      <span className="shrink-0 whitespace-nowrap text-[11px] font-medium text-gray-400">
                                         {formatNotificationTime(notification.created_at)}
                                       </span>
                                     </div>
@@ -305,7 +305,7 @@ export default function Navbar() {
                         )}
                       </div>
 
-                      <div className="border-t border-gray-100 p-3 dark:border-gray-800">
+                      <div className="border-t border-gray-100 p-2.5 sm:p-3 dark:border-gray-800">
                         <Link
                           href="/orders"
                           onClick={() => setNotificationOpen(false)}
@@ -458,7 +458,10 @@ export default function Navbar() {
                     <User className="w-4 h-4" /> Profil Saya
                   </Link>
                   <button
-                    onClick={() => setNotificationOpen((open) => !open)}
+                    onClick={() => {
+                      setMobileOpen(false);
+                      setNotificationOpen((open) => !open);
+                    }}
                     className="px-4 py-3 rounded-xl text-sm font-medium hover:bg-black/5 dark:hover:bg-white/5 flex items-center gap-2 text-left"
                   >
                     <Bell className="w-4 h-4" /> Notifikasi {unreadCount > 0 ? `(${unreadCount})` : ""}

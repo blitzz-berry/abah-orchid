@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Package, Truck, MapPin, CreditCard, CheckCircle, Star, Upload, ExternalLink, Clock, RotateCcw } from "lucide-react";
+import { ArrowLeft, Package, Truck, MapPin, CreditCard, CheckCircle, Star, Upload, ExternalLink, Clock, RotateCcw, RefreshCw } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import Navbar from "@/components/ui/Navbar";
 import Footer from "@/components/ui/Footer";
@@ -37,6 +37,8 @@ export default function OrderDetailPage() {
   const [payment, setPayment] = useState<Payment | null>(null);
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [isUploadingProof, setIsUploadingProof] = useState(false);
+  const [isCheckingPayment, setIsCheckingPayment] = useState(false);
+  const [paymentStatusMessage, setPaymentStatusMessage] = useState("");
   const [reviewForms, setReviewForms] = useState<Record<string, ReviewDraft>>({});
   const [returnReason, setReturnReason] = useState("");
   const [isSubmittingReturn, setIsSubmittingReturn] = useState(false);
@@ -205,6 +207,40 @@ export default function OrderDetailPage() {
       if (paymentURL) window.location.href = paymentURL;
     } catch (e: any) {
       alert(readApiError(e, "Gagal membuka halaman pembayaran. Silakan coba lagi."));
+    }
+  };
+
+  const handleCheckPaymentStatus = async () => {
+    if (!orderID || isCheckingPayment) return;
+    setIsCheckingPayment(true);
+    setPaymentStatusMessage("");
+    try {
+      const [orderResponse, paymentResponse] = await Promise.allSettled([
+        api.get(`/orders/${orderID}`),
+        api.get(`/payments/${orderID}/status`),
+      ]);
+      if (orderResponse.status === "fulfilled") {
+        const nextOrder = orderResponse.value.data.data || orderResponse.value.data;
+        setOrder(nextOrder);
+        setPayment(nextOrder.payments?.[0] || nextOrder.payment || null);
+      }
+      if (paymentResponse.status === "fulfilled") {
+        const nextPayment = paymentResponse.value.data.data || null;
+        setPayment(nextPayment);
+        if (nextPayment?.status === "PAID") {
+          setOrder((prev) => prev ? { ...prev, status: "PAID" } : prev);
+        }
+        if (nextPayment?.status === "EXPIRED") {
+          setOrder((prev) => prev ? { ...prev, status: "CANCELLED" } : prev);
+        }
+        setPaymentStatusMessage(`Status pembayaran sekarang: ${paymentStatusLabel(nextPayment?.status || "")}.`);
+      } else {
+        setPaymentStatusMessage("Status pembayaran belum bisa diperbarui. Coba beberapa saat lagi.");
+      }
+    } catch (e: any) {
+      setPaymentStatusMessage(readApiError(e, "Gagal mengecek status pembayaran. Silakan coba lagi."));
+    } finally {
+      setIsCheckingPayment(false);
     }
   };
 
@@ -429,9 +465,21 @@ export default function OrderDetailPage() {
                   )}
 
                   {isMidtransPayment && order.status === "PENDING_PAYMENT" && (
-                    <button onClick={handleContinuePayment} className="px-4 py-2 rounded-xl bg-black text-white dark:bg-white dark:text-black text-sm font-bold inline-flex items-center gap-2">
-                      Lanjutkan Pembayaran <ExternalLink className="w-4 h-4" />
-                    </button>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <button onClick={handleContinuePayment} className="px-4 py-2 rounded-xl bg-black text-white dark:bg-white dark:text-black text-sm font-bold inline-flex items-center justify-center gap-2">
+                        Lanjutkan Pembayaran <ExternalLink className="w-4 h-4" />
+                      </button>
+                      <button onClick={handleCheckPaymentStatus} disabled={isCheckingPayment} className="px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-800 text-sm font-bold inline-flex items-center justify-center gap-2 disabled:opacity-50">
+                        <RefreshCw className={`w-4 h-4 ${isCheckingPayment ? "animate-spin" : ""}`} />
+                        {isCheckingPayment ? "Mengecek..." : "Cek Status Pembayaran"}
+                      </button>
+                    </div>
+                  )}
+
+                  {paymentStatusMessage && (
+                    <div className="rounded-xl bg-gray-50 dark:bg-zinc-900 border border-gray-100 dark:border-gray-800 p-3 text-sm text-gray-600 dark:text-gray-300">
+                      {paymentStatusMessage}
+                    </div>
                   )}
                 </div>
               ) : (

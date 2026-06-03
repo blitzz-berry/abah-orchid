@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import api from "@/lib/api";
-import { ShoppingCart, Info, CheckCircle2, Leaf, Ruler, Flower2, Weight, Heart, Star, ArrowRight } from "lucide-react";
+import { ShoppingCart, Info, CheckCircle2, Leaf, Ruler, Flower2, Weight, Heart, Star, ArrowRight, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { motion } from "framer-motion";
 import Navbar from "@/components/ui/Navbar";
@@ -26,6 +26,8 @@ export default function ProductDetailPage() {
   const [isAdding, setIsAdding] = useState(false);
   const [addedSuccess, setAddedSuccess] = useState(false);
   const [wishlisted, setWishlisted] = useState(false);
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
   useEffect(() => {
@@ -49,6 +51,7 @@ export default function ProductDetailPage() {
         const otherProducts = productList.filter((item) => item.id !== currentID && !sameCategory.some((related) => related.id === item.id));
 
         setProduct(nextProduct);
+        setSelectedImageIndex(0);
         setReviews(reviewRes.status === "fulfilled" ? reviewRes.value.data.data || [] : []);
         setRelatedProducts([...sameCategory, ...otherProducts].slice(0, 8));
 
@@ -142,6 +145,11 @@ export default function ProductDetailPage() {
 
   const imgUrl = productImageURL(product);
   const stock = product.inventory?.quantity || 0;
+  const galleryImages = productImageGallery(product);
+  const selectedImage = galleryImages[selectedImageIndex] || galleryImages[0];
+  const canNavigateImages = galleryImages.length > 1;
+  const showPreviousImage = () => setSelectedImageIndex((current) => (current - 1 + galleryImages.length) % galleryImages.length);
+  const showNextImage = () => setSelectedImageIndex((current) => (current + 1) % galleryImages.length);
 
   return (
     <div className="flex flex-col min-h-screen bg-[var(--bg)] text-[var(--fg)]">
@@ -157,18 +165,56 @@ export default function ProductDetailPage() {
 
         <div className="flex flex-col lg:flex-row gap-10">
           <div className="w-full lg:w-1/2">
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="glass p-2 rounded-3xl aspect-square overflow-hidden relative bg-white/50 dark:bg-black/50">
-              <img src={imgUrl} alt={product.name} className="w-full h-full object-cover rounded-2xl" />
-            </motion.div>
-            {product.images && product.images.length > 1 && (
-              <div className="flex gap-2 mt-3">
-                {product.images.slice(0, 5).map((img) => (
-                  <div key={img.id} className="w-16 h-16 rounded-xl overflow-hidden border-2 border-gray-200 dark:border-gray-800 cursor-pointer hover:border-[var(--color-brand-500)] transition-colors">
-                    <img src={img.image_url} alt={img.alt_text || product.name} className="w-full h-full object-cover" />
-                  </div>
+            <motion.button
+              type="button"
+              onClick={() => setIsPreviewOpen(true)}
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="glass p-2 rounded-3xl aspect-square overflow-hidden relative bg-white/50 dark:bg-black/50 w-full text-left group"
+              aria-label="Buka preview foto produk"
+            >
+              <img src={selectedImage.url || imgUrl} alt={selectedImage.alt || product.name} className="w-full h-full object-cover rounded-2xl transition-transform duration-500 group-hover:scale-[1.02]" />
+            </motion.button>
+            {canNavigateImages && (
+              <div className="flex gap-2 mt-3 overflow-x-auto pb-1">
+                {galleryImages.slice(0, 8).map((img, index) => (
+                  <button
+                    key={img.id}
+                    type="button"
+                    onClick={() => setSelectedImageIndex(index)}
+                    className={`w-16 h-16 rounded-xl overflow-hidden border-2 cursor-pointer transition-colors shrink-0 ${selectedImageIndex === index ? "border-[var(--color-brand-500)]" : "border-gray-200 dark:border-gray-800 hover:border-[var(--color-brand-500)]"}`}
+                    aria-label={`Lihat foto produk ${index + 1}`}
+                  >
+                    <img src={img.url} alt={img.alt || product.name} className="w-full h-full object-cover" />
+                  </button>
                 ))}
               </div>
             )}
+            <div className="glass p-5 rounded-2xl mt-6 hidden lg:block">
+              <h3 className="font-bold flex items-center gap-2 border-b border-gray-200 dark:border-gray-800 pb-3 mb-3"><Star className="w-5 h-5 text-amber-500" /> Ulasan Pelanggan</h3>
+              {reviews.length === 0 ? (
+                <p className="text-sm text-gray-500">Belum ada review untuk produk ini.</p>
+              ) : (
+                <div className="flex flex-col gap-4">
+                  {reviews.slice(0, 5).map((review) => (
+                    <div key={review.id} className="border border-gray-100 dark:border-gray-800 rounded-xl p-4">
+                      <div className="flex items-center justify-between gap-3 mb-2">
+                        <div className="font-semibold text-sm">{review.user?.full_name || "Pelanggan"}</div>
+                        <div className="flex items-center gap-0.5 text-amber-500" aria-label={`Rating ${review.rating} dari 5`}>
+                          {Array.from({ length: 5 }).map((_, index) => (
+                            <Star
+                              key={index}
+                              className={`h-4 w-4 ${index < review.rating ? "fill-current" : "text-gray-300 dark:text-gray-600"}`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                      <p className="text-sm text-gray-600 dark:text-gray-300">{review.comment || "Tanpa komentar"}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="w-full lg:w-1/2 flex flex-col">
@@ -201,6 +247,26 @@ export default function ProductDetailPage() {
                 </div>
               </div>
 
+              <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6 shadow-sm mb-6">
+                <h3 className="font-bold mb-4">Atur Pesanan</h3>
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="border border-gray-300 dark:border-gray-700 rounded-xl flex items-center overflow-hidden h-11 w-32">
+                    <button onClick={() => setQuantity(Math.max(1, quantity - 1))} className="w-10 h-full flex items-center justify-center font-bold hover:bg-gray-100 dark:hover:bg-zinc-800">-</button>
+                    <input type="number" readOnly value={quantity} className="w-12 h-full text-center border-x border-gray-300 dark:border-gray-700 bg-transparent font-bold outline-none" />
+                    <button onClick={() => setQuantity(Math.min(stock || 99, quantity + 1))} className="w-10 h-full flex items-center justify-center font-bold hover:bg-gray-100 dark:hover:bg-zinc-800">+</button>
+                  </div>
+                  <div className="text-sm text-gray-500">Subtotal: <span className="font-bold text-[var(--fg)]">Rp {(product.price * quantity).toLocaleString("id-ID")}</span></div>
+                </div>
+                <input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Catatan ke penjual (opsional)" className="w-full bg-gray-50 dark:bg-black border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm focus:ring-1 focus:ring-[var(--color-brand-500)] outline-none mb-4" />
+                {addedSuccess && <div className="bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 p-3 rounded-xl text-sm font-medium mb-4 text-center border border-emerald-200 dark:border-emerald-800">Berhasil ditambahkan ke keranjang.</div>}
+                <button onClick={handleToggleWishlist} className={`w-full py-3 mb-3 rounded-xl font-bold flex items-center justify-center gap-2 border transition-colors ${wishlisted ? "border-red-200 bg-red-50 text-red-600 dark:border-red-900 dark:bg-red-950/20" : "border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-zinc-800"}`}>
+                  <Heart className={`w-5 h-5 ${wishlisted ? "fill-current" : ""}`} /> {wishlisted ? "Hapus dari Wishlist" : "Simpan ke Wishlist"}
+                </button>
+                <button onClick={handleAddToCart} disabled={isAdding || stock < 1} className="w-full py-3.5 bg-black text-white dark:bg-white dark:text-black rounded-xl font-bold flex items-center justify-center gap-2 hover:scale-[1.02] transition-transform disabled:opacity-50 shadow-lg">
+                  {isAdding ? <Spinner /> : <ShoppingCart className="w-5 h-5" />} {stock < 1 ? "Stok Habis" : isAdding ? "Memproses..." : "Masukkan Keranjang"}
+                </button>
+              </div>
+
               <div className="glass p-5 rounded-2xl mb-6">
                 <h3 className="font-bold flex items-center gap-2 border-b border-gray-200 dark:border-gray-800 pb-3 mb-3"><Info className="w-5 h-5" /> Deskripsi</h3>
                 <p className="text-gray-600 dark:text-gray-300 leading-relaxed text-sm">{product.description || "Anggrek subur dan dijamin kesehatannya. Tanaman siap adaptasi ke lingkungan baru."}</p>
@@ -213,7 +279,7 @@ export default function ProductDetailPage() {
                 </div>
               )}
 
-              <div className="glass p-5 rounded-2xl mb-6">
+              <div className="glass p-5 rounded-2xl mb-6 lg:hidden">
                 <h3 className="font-bold flex items-center gap-2 border-b border-gray-200 dark:border-gray-800 pb-3 mb-3"><Star className="w-5 h-5 text-amber-500" /> Ulasan Pelanggan</h3>
                 {reviews.length === 0 ? (
                   <p className="text-sm text-gray-500">Belum ada review untuk produk ini.</p>
@@ -221,8 +287,16 @@ export default function ProductDetailPage() {
                   <div className="flex flex-col gap-4">
                     {reviews.slice(0, 5).map((review) => (
                       <div key={review.id} className="border border-gray-100 dark:border-gray-800 rounded-xl p-4">
-                        <div className="flex items-center justify-between gap-3 mb-2">
+                        <div className="flex items-center justify-between gap-3 mb-2 [&>div.font-bold]:hidden">
                           <div className="font-semibold text-sm">{review.user?.full_name || "Pelanggan"}</div>
+                          <div className="flex items-center gap-0.5 text-amber-500" aria-label={`Rating ${review.rating} dari 5`}>
+                            {Array.from({ length: 5 }).map((_, index) => (
+                              <Star
+                                key={index}
+                                className={`h-4 w-4 ${index < review.rating ? "fill-current" : "text-gray-300 dark:text-gray-600"}`}
+                              />
+                            ))}
+                          </div>
                           <div className="text-sm font-bold text-amber-500">{"★".repeat(review.rating)}{"☆".repeat(5 - review.rating)}</div>
                         </div>
                         <p className="text-sm text-gray-600 dark:text-gray-300">{review.comment || "Tanpa komentar"}</p>
@@ -231,26 +305,6 @@ export default function ProductDetailPage() {
                   </div>
                 )}
               </div>
-            </motion.div>
-
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6 shadow-sm sticky top-24">
-              <h3 className="font-bold mb-4">Atur Pesanan</h3>
-              <div className="flex items-center gap-4 mb-4">
-                <div className="border border-gray-300 dark:border-gray-700 rounded-xl flex items-center overflow-hidden h-11 w-32">
-                  <button onClick={() => setQuantity(Math.max(1, quantity - 1))} className="w-10 h-full flex items-center justify-center font-bold hover:bg-gray-100 dark:hover:bg-zinc-800">-</button>
-                  <input type="number" readOnly value={quantity} className="w-12 h-full text-center border-x border-gray-300 dark:border-gray-700 bg-transparent font-bold outline-none" />
-                  <button onClick={() => setQuantity(Math.min(stock || 99, quantity + 1))} className="w-10 h-full flex items-center justify-center font-bold hover:bg-gray-100 dark:hover:bg-zinc-800">+</button>
-                </div>
-                <div className="text-sm text-gray-500">Subtotal: <span className="font-bold text-[var(--fg)]">Rp {(product.price * quantity).toLocaleString("id-ID")}</span></div>
-              </div>
-              <input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Catatan ke penjual (opsional)" className="w-full bg-gray-50 dark:bg-black border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm focus:ring-1 focus:ring-[var(--color-brand-500)] outline-none mb-4" />
-              {addedSuccess && <div className="bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 p-3 rounded-xl text-sm font-medium mb-4 text-center border border-emerald-200 dark:border-emerald-800">Berhasil ditambahkan ke keranjang.</div>}
-              <button onClick={handleToggleWishlist} className={`w-full py-3 mb-3 rounded-xl font-bold flex items-center justify-center gap-2 border transition-colors ${wishlisted ? "border-red-200 bg-red-50 text-red-600 dark:border-red-900 dark:bg-red-950/20" : "border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-zinc-800"}`}>
-                <Heart className={`w-5 h-5 ${wishlisted ? "fill-current" : ""}`} /> {wishlisted ? "Hapus dari Wishlist" : "Simpan ke Wishlist"}
-              </button>
-              <button onClick={handleAddToCart} disabled={isAdding || stock < 1} className="w-full py-3.5 bg-black text-white dark:bg-white dark:text-black rounded-xl font-bold flex items-center justify-center gap-2 hover:scale-[1.02] transition-transform disabled:opacity-50 shadow-lg">
-                {isAdding ? <Spinner /> : <ShoppingCart className="w-5 h-5" />} {stock < 1 ? "Stok Habis" : isAdding ? "Memproses..." : "Masukkan Keranjang"}
-              </button>
             </motion.div>
           </div>
         </div>
@@ -274,6 +328,39 @@ export default function ProductDetailPage() {
           </section>
         )}
       </main>
+      {isPreviewOpen && (
+        <div className="fixed inset-0 z-[90] bg-black/90 p-4 flex items-center justify-center">
+          <button
+            type="button"
+            onClick={() => setIsPreviewOpen(false)}
+            className="absolute right-4 top-4 h-10 w-10 rounded-full bg-white/10 text-white hover:bg-white/20 flex items-center justify-center"
+            aria-label="Tutup preview foto"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          {canNavigateImages && (
+            <button
+              type="button"
+              onClick={showPreviousImage}
+              className="absolute left-4 top-1/2 -translate-y-1/2 h-11 w-11 rounded-full bg-white/10 text-white hover:bg-white/20 flex items-center justify-center"
+              aria-label="Foto sebelumnya"
+            >
+              <ChevronLeft className="h-6 w-6" />
+            </button>
+          )}
+          <img src={selectedImage.url || imgUrl} alt={selectedImage.alt || product.name} className="max-h-[86dvh] max-w-full rounded-2xl object-contain" />
+          {canNavigateImages && (
+            <button
+              type="button"
+              onClick={showNextImage}
+              className="absolute right-4 top-1/2 -translate-y-1/2 h-11 w-11 rounded-full bg-white/10 text-white hover:bg-white/20 flex items-center justify-center"
+              aria-label="Foto berikutnya"
+            >
+              <ChevronRight className="h-6 w-6" />
+            </button>
+          )}
+        </div>
+      )}
       <Footer />
     </div>
   );
@@ -334,6 +421,26 @@ function ProductSuggestionCard({ product, idx }: { product: Product; idx: number
       </Link>
     </motion.div>
   );
+}
+
+function productImageGallery(product: Product) {
+  const images = [...(product.images || [])]
+    .filter((item) => item.image_url)
+    .sort((a, b) => Number(Boolean(b.is_primary)) - Number(Boolean(a.is_primary)));
+
+  if (images.length === 0) {
+    return [{
+      id: "fallback",
+      url: productImageURL(product),
+      alt: product.name,
+    }];
+  }
+
+  return images.map((image, index) => ({
+    id: image.id || `${image.image_url}-${index}`,
+    url: resolveUploadURL(image.image_url),
+    alt: image.alt_text || product.name,
+  }));
 }
 
 function productImageURL(product: Product) {

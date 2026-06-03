@@ -6,11 +6,13 @@ import (
 	"strings"
 
 	"github.com/midtrans/midtrans-go"
+	"github.com/midtrans/midtrans-go/coreapi"
 	"github.com/midtrans/midtrans-go/snap"
 	"orchidmart-backend/internal/config"
 )
 
 var SnapClient snap.Client
+var CoreClient coreapi.Client
 
 func InitMidtrans() {
 	serverKey := strings.TrimSpace(os.Getenv("MIDTRANS_SERVER_KEY"))
@@ -28,6 +30,7 @@ func InitMidtrans() {
 	warnIfMidtransKeyEnvLooksSuspicious(serverKey, env)
 
 	SnapClient.New(serverKey, env)
+	CoreClient.New(serverKey, env)
 	log.Printf("Midtrans initialized in %s mode using configured access key", midtransEnvName(env))
 }
 

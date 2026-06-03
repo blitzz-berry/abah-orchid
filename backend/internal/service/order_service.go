@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -212,6 +213,7 @@ func (s *orderService) Checkout(userID string, req request.CheckoutRequest) (*mo
 			Phone: req.ShippingPhone,
 		},
 		EnabledPayments: enabledSnapPayments(paymentMethod),
+		Callbacks:       snapPaymentCallbacks(order.ID.String()),
 		Expiry: &snap.ExpiryDetails{
 			Unit:     "hours",
 			Duration: 24,
@@ -262,6 +264,19 @@ func (s *orderService) checkoutCustomerEmail(userID uuid.UUID) string {
 		return "customer@example.com"
 	}
 	return email
+}
+
+func snapPaymentCallbacks(orderID string) *snap.Callbacks {
+	baseURL := strings.TrimSpace(os.Getenv("FRONTEND_URL"))
+	if baseURL == "" {
+		baseURL = strings.TrimSpace(os.Getenv("APP_URL"))
+	}
+	if baseURL == "" {
+		baseURL = "http://localhost:3000"
+	}
+	return &snap.Callbacks{
+		Finish: strings.TrimRight(baseURL, "/") + "/orders/" + orderID,
+	}
 }
 
 func packingCostForType(packingType string) (float64, error) {
@@ -697,6 +712,7 @@ func (s *orderService) InitiatePayment(orderID, userID string) (*model.Payment, 
 			Phone: order.ShippingPhone,
 		},
 		EnabledPayments: enabledSnapPayments(paymentMethod),
+		Callbacks:       snapPaymentCallbacks(order.ID.String()),
 		Expiry: &snap.ExpiryDetails{
 			Unit:     "hours",
 			Duration: 24,
@@ -734,7 +750,48 @@ func (s *orderService) GetPaymentStatus(orderID, userID string) (*model.Payment,
 	if _, err := s.orderRepo.GetOrderByIDForUser(orderID, userID); err != nil {
 		return nil, err
 	}
-	return s.orderRepo.GetPaymentByOrderID(orderID)
+	payment, err := s.orderRepo.GetPaymentByOrderID(orderID)
+	if err != nil {
+		return nil, err
+	}
+	if shouldSyncMidtransPayment(payment) {
+		if err := s.syncMidtransPaymentStatus(orderID); err != nil {
+			log.Printf("midtrans status sync failed for order %s: %v", orderID, err)
+		} else if refreshed, refreshErr := s.orderRepo.GetPaymentByOrderID(orderID); refreshErr == nil {
+			payment = refreshed
+		}
+	}
+	return payment, nil
+}
+
+func shouldSyncMidtransPayment(payment *model.Payment) bool {
+	if payment == nil || payment.Provider != "midtrans" {
+		return false
+	}
+	switch payment.Status {
+	case "PENDING", "":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *orderService) syncMidtransPaymentStatus(orderID string) error {
+	resp, err := midtransPkg.CoreClient.CheckTransaction(orderID)
+	if err != nil {
+		return err
+	}
+	if resp == nil || strings.TrimSpace(resp.TransactionStatus) == "" {
+		return nil
+	}
+
+	payload := map[string]interface{}{
+		"order_id":           orderID,
+		"transaction_status": resp.TransactionStatus,
+		"status_code":        resp.StatusCode,
+		"gross_amount":       resp.GrossAmount,
+	}
+	return s.HandleMidtransWebhook(payload)
 }
 
 func (s *orderService) UploadPaymentProof(orderID, userID, proofImageURL string) (*model.Payment, error) {

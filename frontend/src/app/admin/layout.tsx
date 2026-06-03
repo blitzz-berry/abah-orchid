@@ -153,10 +153,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 flex">
       {/* Mobile Top Bar */}
-      <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-white dark:bg-black border-b border-gray-200 dark:border-gray-800 px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Leaf className="w-6 h-6 text-[var(--color-leaf-500)]" />
-          <span className="font-bold text-lg">OrchidAdmin</span>
+      <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-white dark:bg-black border-b border-gray-200 dark:border-gray-800 px-3 min-[360px]:px-4 py-3 flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <Leaf className="w-6 h-6 shrink-0 text-[var(--color-leaf-500)]" />
+          <span className="truncate text-base font-bold min-[360px]:text-lg">OrchidAdmin</span>
         </div>
         <div className="flex items-center gap-2">
           <div ref={(node) => { notificationContainersRef.current[0] = node; }} className="relative">
@@ -317,17 +317,17 @@ function AdminNotificationDropdown({
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 8 }}
-          className={`absolute z-50 mt-2 w-[320px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-zinc-950 ${align === "left" ? "left-0" : "right-0"}`}
+          className={`fixed left-3 right-3 top-16 z-50 max-h-[calc(100dvh-5rem)] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-zinc-950 md:absolute md:top-auto md:mt-2 md:w-[320px] md:max-h-none md:max-w-[calc(100vw-2rem)] ${align === "left" ? "md:left-0" : "md:right-0"}`}
         >
-          <div className="flex items-center justify-between border-b border-gray-100 p-4 dark:border-gray-800">
-            <div className="font-bold text-sm">Notifikasi Admin</div>
+          <div className="flex items-center justify-between gap-3 border-b border-gray-100 p-3 sm:p-4 dark:border-gray-800">
+            <div className="min-w-0 truncate text-sm font-bold">Notifikasi Admin</div>
             {unreadCount > 0 && (
-              <button onClick={markAllNotificationsRead} className="inline-flex items-center gap-1 text-xs font-bold text-[var(--color-brand-600)]">
-                <CheckCheck className="h-3.5 w-3.5" /> Tandai dibaca
+              <button onClick={markAllNotificationsRead} className="inline-flex shrink-0 items-center gap-1 text-xs font-bold text-[var(--color-brand-600)]">
+                <CheckCheck className="h-3.5 w-3.5" /> <span className="hidden min-[360px]:inline">Tandai dibaca</span><span className="min-[360px]:hidden">Dibaca</span>
               </button>
             )}
           </div>
-          <div className="max-h-[360px] overflow-y-auto">
+          <div className="max-h-[calc(100dvh-11rem)] overflow-y-auto md:max-h-[360px]">
             {notifications.length === 0 ? (
               <div className="p-5 text-center text-sm text-gray-500">Belum ada notifikasi admin.</div>
             ) : (
@@ -336,12 +336,12 @@ function AdminNotificationDropdown({
                   key={notification.id}
                   href={adminNotificationHref(notification)}
                   onClick={() => void markNotificationRead(notification)}
-                  className={`block border-b border-gray-100 p-4 last:border-b-0 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-zinc-900 ${notification.is_read ? "" : isUnreadReturnNotification(notification) ? "bg-orange-50/90 dark:bg-orange-950/30 ring-1 ring-orange-200 dark:ring-orange-900" : "bg-orange-50/70 dark:bg-orange-950/20"}`}
+                  className={`block border-b border-gray-100 p-3 last:border-b-0 hover:bg-gray-50 sm:p-4 dark:border-gray-800 dark:hover:bg-zinc-900 ${notification.is_read ? "" : isUnreadReturnNotification(notification) ? "bg-orange-50/90 dark:bg-orange-950/30 ring-1 ring-orange-200 dark:ring-orange-900" : "bg-orange-50/70 dark:bg-orange-950/20"}`}
                 >
                   <div className="flex items-start gap-3">
                     <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${notification.is_read ? "bg-gray-300" : isUnreadReturnNotification(notification) ? "bg-orange-500" : "bg-[var(--color-brand-600)]"}`} />
-                    <div className="min-w-0">
-                      <div className="text-sm font-bold">{notification.title}</div>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-bold">{notification.title}</div>
                       <div className="mt-1 text-xs leading-relaxed text-gray-500">{notification.message}</div>
                       {notification.created_at && (
                         <div className="mt-2 text-[11px] text-gray-400">{new Date(notification.created_at).toLocaleString("id-ID")}</div>
