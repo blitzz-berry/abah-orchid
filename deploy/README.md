@@ -27,8 +27,10 @@ The included nginx config listens on port 80. Put a TLS terminator in front of i
 ## Payment Expiry
 `PAYMENT_EXPIRY_WORKER=true` runs an internal worker every 15 minutes to expire unpaid orders.
 
-## Object Storage
-The production compose starts MinIO and configures `STORAGE_DRIVER=s3`. Product images are stored in public `S3_BUCKET` and exposed through `/media/orchidmart-images/`. Payment proofs are stored in private `S3_PAYMENT_PROOF_BUCKET` and are only served through authenticated backend endpoints.
+## File Storage
+The production compose uses local Docker volumes by default. Product images are stored in `uploads` and exposed through `/uploads/`. Payment proofs are stored in the private `private_uploads` volume and are only served through authenticated backend endpoints.
+
+Keep both volumes in the regular VPS backup plan. If the container is rebuilt, the files remain in the Docker volumes, but they are still tied to that VPS unless you migrate or back them up.
 
 ## Database TLS
 `DB_SSLMODE` is required in production. The included compose file uses `disable` only because PostgreSQL runs on the private Docker network. For an external managed PostgreSQL database, use `require`, `verify-ca`, or preferably `verify-full`, and set `DB_SSLROOTCERT` when certificate validation is required.

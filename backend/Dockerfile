@@ -20,7 +20,7 @@ RUN apk add --no-cache ca-certificates tzdata wget && addgroup -S app && adduser
 
 COPY --from=builder /out/orchidmart-api /app/orchidmart-api
 
-RUN mkdir -p /app/uploads && chown -R app:app /app
+RUN mkdir -p /app/uploads /app/private_uploads && chown -R app:app /app
 USER app
 
 ENV APP_PORT=8080
