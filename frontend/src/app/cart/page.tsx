@@ -18,6 +18,7 @@ export default function CartPage() {
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const user = useAuthStore((s) => s.user);
 
   const cartItems = useMemo(() => cart?.items ?? [], [cart]);
   const selectedItems = useMemo(
@@ -31,6 +32,10 @@ export default function CartPage() {
   useEffect(() => {
     if (!isAuthenticated) {
       router.push("/login");
+      return;
+    }
+    if (user?.role === "admin") {
+      setIsLoading(false);
       return;
     }
 
@@ -47,7 +52,7 @@ export default function CartPage() {
     };
 
     void fetchCart();
-  }, [isAuthenticated, router]);
+  }, [isAuthenticated, router, user?.role]);
 
   const toggleItem = (itemId: string) => {
     setSelectedItemIds((current) =>
@@ -121,6 +126,13 @@ export default function CartPage() {
 
         {isLoading ? (
           <CartSkeleton />
+        ) : user?.role === "admin" ? (
+          <div className="text-center py-20 glass rounded-3xl">
+            <Leaf className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold mb-2">Keranjang khusus customer</h2>
+            <p className="text-gray-500 mb-8 max-w-xl mx-auto">Akun admin dipakai untuk mengelola toko, stok, pesanan, dan laporan. Gunakan akun customer terpisah untuk melakukan pembelian.</p>
+            <Link href="/admin" className="bg-black text-white dark:bg-white dark:text-black px-6 py-3 rounded-xl font-bold inline-flex items-center gap-2">Buka Admin Panel <ArrowRight className="w-4 h-4" /></Link>
+          </div>
         ) : !cart || cartItems.length === 0 ? (
           <div className="text-center py-20 glass rounded-3xl">
             <Leaf className="w-16 h-16 text-gray-300 mx-auto mb-4" />

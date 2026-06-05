@@ -45,11 +45,15 @@ export default function OrderDetailPage() {
   const [cancellationReason, setCancellationReason] = useState("");
   const [isSubmittingCancellation, setIsSubmittingCancellation] = useState(false);
   const proofInputRef = useRef<HTMLInputElement | null>(null);
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, user } = useAuthStore();
 
   useEffect(() => {
     if (!isAuthenticated) {
       router.push("/login");
+      return;
+    }
+    if (user?.role === "admin") {
+      setIsLoading(false);
       return;
     }
     const fetchOrder = async () => {
@@ -71,7 +75,7 @@ export default function OrderDetailPage() {
       }
     };
     if (id) void fetchOrder();
-  }, [id, isAuthenticated, router]);
+  }, [id, isAuthenticated, router, user?.role]);
 
   const activePayment = payment || order?.payments?.[0] || order?.payment || null;
   const isManualTransfer = activePayment?.method === "manual_bank_transfer" || activePayment?.method === "bank_transfer";
@@ -85,7 +89,7 @@ export default function OrderDetailPage() {
   const orderID = typeof id === "string" ? id : Array.isArray(id) ? id[0] : "";
 
   useEffect(() => {
-    if (!isAuthenticated || !orderID) return;
+    if (!isAuthenticated || user?.role === "admin" || !orderID) return;
     return onRealtimeEvent((event) => {
       if (!isOrderRefreshEvent(event, orderID)) return;
       void Promise.allSettled([
@@ -102,7 +106,7 @@ export default function OrderDetailPage() {
         }
       });
     });
-  }, [isAuthenticated, orderID]);
+  }, [isAuthenticated, orderID, user?.role]);
 
   const sortedStatusHistory = [...(order?.status_history || [])].sort((a, b) => {
     const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
@@ -319,6 +323,21 @@ export default function OrderDetailPage() {
         <main className="flex-1 max-w-4xl mx-auto w-full px-4 sm:px-6 lg:px-8 pt-24 pb-16">
           <OrderDetailSkeleton />
         </main>
+      </div>
+    );
+  }
+
+  if (user?.role === "admin") {
+    return (
+      <div className="flex flex-col min-h-screen bg-[var(--bg)]">
+        <Navbar />
+        <div className="flex-1 flex flex-col items-center justify-center px-4 text-center">
+          <Package className="w-16 h-16 text-gray-300 mb-4" />
+          <h1 className="text-2xl font-bold mb-2">Detail pesanan customer dipisahkan dari admin</h1>
+          <p className="text-gray-500 mb-6 max-w-xl">Gunakan dashboard admin untuk mengelola pesanan. Akun customer dipakai khusus untuk riwayat pembelian pribadi.</p>
+          <Link href="/admin/orders" className="rounded-xl bg-black px-6 py-3 text-sm font-bold text-white dark:bg-white dark:text-black">Buka Manajemen Pesanan</Link>
+        </div>
+        <Footer />
       </div>
     );
   }

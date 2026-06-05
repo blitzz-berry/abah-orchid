@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -240,6 +241,272 @@ func (h *AdminHandler) GetTopProducts(c *gin.Context) {
 		LIMIT 10
 	`, successStatuses, start, end).Scan(&rows)
 	c.JSON(http.StatusOK, gin.H{"data": rows})
+}
+
+func (h *AdminHandler) GetMonthlySalesReport(c *gin.Context) {
+	period, start, end, err := monthlyReportRange(c.Query("month"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	successStatuses := []string{"PAID", "PROCESSING", "SHIPPED", "DELIVERED", "COMPLETED"}
+
+	var orders []model.Order
+	if err := h.db.
+		Preload("Items").
+		Preload("Payments").
+		Preload("User").
+		Where("status IN ? AND created_at >= ? AND created_at < ?", successStatuses, start, end).
+		Order("created_at asc").
+		Find(&orders).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch monthly sales report"})
+		return
+	}
+
+	type reportOrderItem struct {
+		ProductName string  `json:"product_name"`
+		Quantity    int     `json:"quantity"`
+		Subtotal    float64 `json:"subtotal"`
+	}
+	type reportOrder struct {
+		ID            string            `json:"id"`
+		OrderNumber   string            `json:"order_number"`
+		OrderDate     time.Time         `json:"order_date"`
+		CustomerName  string            `json:"customer_name"`
+		Status        string            `json:"status"`
+		PaymentMethod string            `json:"payment_method"`
+		Subtotal      float64           `json:"subtotal"`
+		Discount      float64           `json:"discount"`
+		ShippingCost  float64           `json:"shipping_cost"`
+		Total         float64           `json:"total"`
+		Items         []reportOrderItem `json:"items"`
+	}
+	type reportStockProduct struct {
+		ProductID         string  `json:"product_id"`
+		Name              string  `json:"name"`
+		Category          string  `json:"category"`
+		Quantity          int     `json:"quantity"`
+		LowStockThreshold int     `json:"low_stock_threshold"`
+		StockStatus       string  `json:"stock_status"`
+		Price             float64 `json:"price"`
+		StockValue        float64 `json:"stock_value"`
+	}
+	type restockRecommendation struct {
+		ProductID string  `json:"product_id"`
+		Name      string  `json:"name"`
+		Quantity  int     `json:"quantity"`
+		Sold      int64   `json:"sold"`
+		Revenue   float64 `json:"revenue"`
+		Priority  string  `json:"priority"`
+	}
+
+	daily := map[string]*salesPoint{}
+	productMap := map[string]*topProduct{}
+	reportOrders := make([]reportOrder, 0, len(orders))
+	var totalRevenue float64
+	var totalItems int64
+	var totalDiscount float64
+	var totalShipping float64
+
+	for _, order := range orders {
+		totalRevenue += order.Total
+		totalDiscount += order.Discount
+		totalShipping += order.ShippingCost
+
+		dayLabel := order.CreatedAt.Format("2006-01-02")
+		if _, ok := daily[dayLabel]; !ok {
+			daily[dayLabel] = &salesPoint{Label: dayLabel}
+		}
+		daily[dayLabel].Orders++
+		daily[dayLabel].Revenue += order.Total
+
+		items := make([]reportOrderItem, 0, len(order.Items))
+		for _, item := range order.Items {
+			totalItems += int64(item.Quantity)
+			items = append(items, reportOrderItem{
+				ProductName: item.ProductName,
+				Quantity:    item.Quantity,
+				Subtotal:    item.Subtotal,
+			})
+
+			key := item.ProductID.String()
+			if _, ok := productMap[key]; !ok {
+				productMap[key] = &topProduct{ProductID: key, Name: item.ProductName}
+			}
+			productMap[key].Quantity += int64(item.Quantity)
+			productMap[key].Revenue += item.Subtotal
+		}
+
+		paymentMethod := "-"
+		if len(order.Payments) > 0 {
+			paymentMethod = order.Payments[0].Method
+		}
+		customerName := strings.TrimSpace(order.ShippingName)
+		if customerName == "" {
+			customerName = strings.TrimSpace(order.User.FullName)
+		}
+		if customerName == "" {
+			customerName = "Pelanggan"
+		}
+
+		reportOrders = append(reportOrders, reportOrder{
+			ID:            order.ID.String(),
+			OrderNumber:   order.OrderNumber,
+			OrderDate:     order.CreatedAt,
+			CustomerName:  customerName,
+			Status:        order.Status,
+			PaymentMethod: paymentMethod,
+			Subtotal:      order.Subtotal,
+			Discount:      order.Discount,
+			ShippingCost:  order.ShippingCost,
+			Total:         order.Total,
+			Items:         items,
+		})
+	}
+
+	dailySales := make([]salesPoint, 0, int(end.Sub(start).Hours()/24))
+	for day := start; day.Before(end); day = day.AddDate(0, 0, 1) {
+		label := day.Format("2006-01-02")
+		if point, ok := daily[label]; ok {
+			dailySales = append(dailySales, *point)
+			continue
+		}
+		dailySales = append(dailySales, salesPoint{Label: label})
+	}
+
+	products := make([]topProduct, 0, len(productMap))
+	for _, product := range productMap {
+		products = append(products, *product)
+	}
+	sort.Slice(products, func(i, j int) bool {
+		if products[i].Quantity == products[j].Quantity {
+			return products[i].Revenue > products[j].Revenue
+		}
+		return products[i].Quantity > products[j].Quantity
+	})
+
+	aov := 0.0
+	if len(orders) > 0 {
+		aov = totalRevenue / float64(len(orders))
+	}
+
+	var stockProducts []model.Product
+	if err := h.db.
+		Preload("Category").
+		Preload("Inventory").
+		Order("name asc").
+		Find(&stockProducts).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch stock report"})
+		return
+	}
+
+	stockRows := make([]reportStockProduct, 0, len(stockProducts))
+	stockByProductID := map[string]reportStockProduct{}
+	var totalProducts int64
+	var totalActiveProducts int64
+	var totalStockItems int64
+	var totalStockValue float64
+	var lowStockCount int64
+	var outOfStockCount int64
+
+	for _, product := range stockProducts {
+		totalProducts++
+		if strings.EqualFold(product.Status, "active") {
+			totalActiveProducts++
+		}
+
+		quantity := 0
+		threshold := 0
+		if product.Inventory != nil {
+			quantity = product.Inventory.Quantity
+			threshold = product.Inventory.LowStockThreshold
+		}
+
+		status := stockStatus(quantity, threshold)
+		if status == "Stok Habis" {
+			outOfStockCount++
+		} else if status == "Stok Menipis" {
+			lowStockCount++
+		}
+
+		stockValue := float64(quantity) * product.Price
+		totalStockItems += int64(quantity)
+		totalStockValue += stockValue
+
+		categoryName := strings.TrimSpace(product.Category.Name)
+		if categoryName == "" {
+			categoryName = "-"
+		}
+
+		row := reportStockProduct{
+			ProductID:         product.ID.String(),
+			Name:              product.Name,
+			Category:          categoryName,
+			Quantity:          quantity,
+			LowStockThreshold: threshold,
+			StockStatus:       status,
+			Price:             product.Price,
+			StockValue:        stockValue,
+		}
+		stockRows = append(stockRows, row)
+		stockByProductID[row.ProductID] = row
+	}
+
+	recommendations := make([]restockRecommendation, 0)
+	for _, product := range products {
+		stock, ok := stockByProductID[product.ProductID]
+		if !ok {
+			continue
+		}
+		if stock.StockStatus != "Stok Menipis" && stock.StockStatus != "Stok Habis" {
+			continue
+		}
+		priority := "Sedang"
+		if stock.StockStatus == "Stok Habis" || product.Quantity >= int64(maxInt(stock.LowStockThreshold, 1)*2) {
+			priority = "Tinggi"
+		}
+		recommendations = append(recommendations, restockRecommendation{
+			ProductID: product.ProductID,
+			Name:      product.Name,
+			Quantity:  stock.Quantity,
+			Sold:      product.Quantity,
+			Revenue:   product.Revenue,
+			Priority:  priority,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{
+		"period": gin.H{
+			"month":      period,
+			"start_date": start.Format("2006-01-02"),
+			"end_date":   end.AddDate(0, 0, -1).Format("2006-01-02"),
+		},
+		"summary": gin.H{
+			"revenue":        totalRevenue,
+			"orders":         len(orders),
+			"items_sold":     totalItems,
+			"discount":       totalDiscount,
+			"shipping":       totalShipping,
+			"average_order":  aov,
+			"success_status": successStatuses,
+		},
+		"stock_summary": gin.H{
+			"total_products":        totalProducts,
+			"active_products":       totalActiveProducts,
+			"total_stock_items":     totalStockItems,
+			"low_stock_products":    lowStockCount,
+			"out_of_stock_products": outOfStockCount,
+			"stock_value":           totalStockValue,
+		},
+		"daily_sales":  dailySales,
+		"top_products": products,
+		"orders":       reportOrders,
+		"stock": gin.H{
+			"products":                stockRows,
+			"restock_recommendations": recommendations,
+		},
+	}})
 }
 
 func (h *AdminHandler) GetInventoryAnalytics(c *gin.Context) {
@@ -1287,6 +1554,38 @@ func analyticsRange(c *gin.Context) (time.Time, time.Time) {
 		}
 	}
 	return start, end
+}
+
+func monthlyReportRange(value string) (string, time.Time, time.Time, error) {
+	now := time.Now()
+	if strings.TrimSpace(value) == "" {
+		start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+		return start.Format("2006-01"), start, start.AddDate(0, 1, 0), nil
+	}
+
+	parsed, err := time.Parse("2006-01", strings.TrimSpace(value))
+	if err != nil {
+		return "", time.Time{}, time.Time{}, errors.New("month must use YYYY-MM format")
+	}
+	start := time.Date(parsed.Year(), parsed.Month(), 1, 0, 0, 0, 0, now.Location())
+	return start.Format("2006-01"), start, start.AddDate(0, 1, 0), nil
+}
+
+func stockStatus(quantity, threshold int) string {
+	if quantity <= 0 {
+		return "Stok Habis"
+	}
+	if threshold > 0 && quantity <= threshold {
+		return "Stok Menipis"
+	}
+	return "Stok Aman"
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func slugify(value string) string {

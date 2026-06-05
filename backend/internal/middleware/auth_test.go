@@ -102,6 +102,47 @@ func TestAdminMiddlewareRejectsNonAdmin(t *testing.T) {
 	assertMiddlewareError(t, recorder, "Admin access required")
 }
 
+func TestCustomerMiddlewareRejectsAdmin(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	router.GET("/cart", func(c *gin.Context) {
+		c.Set("userRole", "admin")
+		CustomerMiddleware()(c)
+	}, func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/cart", nil)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusForbidden)
+	}
+	assertMiddlewareError(t, recorder, "Customer access required")
+}
+
+func TestCustomerMiddlewareAllowsCustomer(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	router.GET("/cart", func(c *gin.Context) {
+		c.Set("userRole", "customer")
+		CustomerMiddleware()(c)
+	}, func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/cart", nil)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+}
+
 func TestAdminIPAllowlistRejectsIPOutsideAllowlist(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv("ADMIN_IP_ALLOWLIST", "10.0.0.1,192.168.1.0/24")

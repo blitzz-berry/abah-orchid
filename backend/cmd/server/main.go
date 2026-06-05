@@ -136,7 +136,7 @@ func main() {
 		{
 			productRoutes.GET("", productHandler.GetAllProducts)
 			productRoutes.GET("/:id/reviews", reviewHandler.GetByProductID)
-			productRoutes.POST("/:id/reviews", middleware.AuthMiddleware(), reviewHandler.Create)
+			productRoutes.POST("/:id/reviews", middleware.AuthMiddleware(), middleware.CustomerMiddleware(), reviewHandler.Create)
 			productRoutes.GET("/:id", productHandler.GetProductByID)
 
 			adminProductRoutes := productRoutes.Group("", middleware.AuthMiddleware(), middleware.AdminMiddleware(), middleware.AdminIPAllowlist())
@@ -161,7 +161,7 @@ func main() {
 		api.GET("/categories", productHandler.GetAllCategories) // ALSO AT ROOT level as requested by frontend
 		api.GET("/categories/:slug/products", productHandler.GetProductsByCategory)
 
-		addressRoutes := api.Group("/addresses", middleware.AuthMiddleware())
+		addressRoutes := api.Group("/addresses", middleware.AuthMiddleware(), middleware.CustomerMiddleware())
 		{
 			addressRoutes.GET("", authHandler.GetAddresses)
 			addressRoutes.POST("", authHandler.CreateAddress)
@@ -182,7 +182,7 @@ func main() {
 		}
 
 		// Protected Routes (requires JWT token)
-		cartRoutes := api.Group("/cart", middleware.AuthMiddleware())
+		cartRoutes := api.Group("/cart", middleware.AuthMiddleware(), middleware.CustomerMiddleware())
 		{
 			cartRoutes.GET("", cartHandler.GetCart)
 			cartRoutes.POST("", cartHandler.AddToCart)
@@ -192,7 +192,7 @@ func main() {
 			cartRoutes.DELETE("", cartHandler.ClearCart)
 		}
 
-		orderRoutes := api.Group("/orders", middleware.AuthMiddleware())
+		orderRoutes := api.Group("/orders", middleware.AuthMiddleware(), middleware.CustomerMiddleware())
 		{
 			orderRoutes.GET("", orderHandler.GetUserOrders)
 			orderRoutes.GET("/:id", orderHandler.GetOrderByID)
@@ -205,7 +205,7 @@ func main() {
 			orderRoutes.POST("/:id/request-return", orderHandler.RequestReturn)
 		}
 
-		paymentRoutes := api.Group("/payments", middleware.AuthMiddleware())
+		paymentRoutes := api.Group("/payments", middleware.AuthMiddleware(), middleware.CustomerMiddleware())
 		{
 			paymentRoutes.POST("/:order_id/pay", middleware.RateLimit(10, 15*time.Minute), orderHandler.InitiatePayment)
 			paymentRoutes.GET("/:order_id/status", orderHandler.GetPaymentStatus)
@@ -221,7 +221,7 @@ func main() {
 			notificationRoutes.PATCH("/read-all", notificationHandler.MarkAllRead)
 		}
 
-		couponRoutes := api.Group("/coupons", middleware.AuthMiddleware())
+		couponRoutes := api.Group("/coupons", middleware.AuthMiddleware(), middleware.CustomerMiddleware())
 		{
 			couponRoutes.POST("/preview", middleware.RateLimit(20, time.Minute), adminHandler.PreviewCoupon)
 		}
@@ -234,6 +234,7 @@ func main() {
 			adminRoutes.GET("/analytics/sales/summary", adminHandler.GetSalesAnalytics)
 			adminRoutes.GET("/analytics/sales/chart", adminHandler.GetSalesChart)
 			adminRoutes.GET("/analytics/sales/top-products", adminHandler.GetTopProducts)
+			adminRoutes.GET("/reports/sales/monthly", adminHandler.GetMonthlySalesReport)
 			adminRoutes.GET("/analytics/inventory", adminHandler.GetInventoryAnalytics)
 			adminRoutes.GET("/analytics/customers", adminHandler.GetCustomerAnalytics)
 			adminRoutes.GET("/analytics/trends", adminHandler.GetTrendAnalytics)
@@ -287,7 +288,7 @@ func main() {
 			adminRoutes.POST("/coupons/preview", middleware.RateLimit(60, time.Minute), adminHandler.PreviewCoupon)
 		}
 
-		wishlistRoutes := api.Group("/wishlist", middleware.AuthMiddleware())
+		wishlistRoutes := api.Group("/wishlist", middleware.AuthMiddleware(), middleware.CustomerMiddleware())
 		{
 			wishlistRoutes.GET("", productHandler.GetWishlist)
 			wishlistRoutes.POST("", productHandler.AddToWishlist)
@@ -298,7 +299,7 @@ func main() {
 		reviewRoutes := api.Group("/reviews")
 		{
 			reviewRoutes.GET("/product/:productID", reviewHandler.GetByProductID)
-			reviewRoutes.POST("", middleware.AuthMiddleware(), reviewHandler.Create)
+			reviewRoutes.POST("", middleware.AuthMiddleware(), middleware.CustomerMiddleware(), reviewHandler.Create)
 		}
 	}
 

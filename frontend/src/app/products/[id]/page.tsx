@@ -29,6 +29,8 @@ export default function ProductDetailPage() {
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const user = useAuthStore((s) => s.user);
+  const isAdmin = user?.role === "admin";
 
   useEffect(() => {
     const fetchDetail = async () => {
@@ -55,7 +57,7 @@ export default function ProductDetailPage() {
         setReviews(reviewRes.status === "fulfilled" ? reviewRes.value.data.data || [] : []);
         setRelatedProducts([...sameCategory, ...otherProducts].slice(0, 8));
 
-        if (isAuthenticated) {
+        if (isAuthenticated && !isAdmin) {
           const wishlistRes = await api.get(`/wishlist/${id}/status`);
           setWishlisted(Boolean(wishlistRes.data.data?.wishlisted));
         }
@@ -69,11 +71,15 @@ export default function ProductDetailPage() {
     if (id) {
       void fetchDetail();
     }
-  }, [id, isAuthenticated]);
+  }, [id, isAuthenticated, isAdmin]);
 
   const handleAddToCart = async () => {
     if (!isAuthenticated) {
       router.push("/login");
+      return;
+    }
+    if (isAdmin) {
+      alert("Akun admin tidak dapat berbelanja. Gunakan akun customer untuk melakukan pembelian.");
       return;
     }
     if (!product?.id) {
@@ -103,6 +109,10 @@ export default function ProductDetailPage() {
   const handleToggleWishlist = async () => {
     if (!isAuthenticated) {
       router.push("/login");
+      return;
+    }
+    if (isAdmin) {
+      alert("Wishlist hanya tersedia untuk akun customer.");
       return;
     }
     try {
@@ -259,11 +269,16 @@ export default function ProductDetailPage() {
                 </div>
                 <input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Catatan ke penjual (opsional)" className="w-full bg-gray-50 dark:bg-black border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-sm focus:ring-1 focus:ring-[var(--color-brand-500)] outline-none mb-4" />
                 {addedSuccess && <div className="bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 p-3 rounded-xl text-sm font-medium mb-4 text-center border border-emerald-200 dark:border-emerald-800">Berhasil ditambahkan ke keranjang.</div>}
-                <button onClick={handleToggleWishlist} className={`w-full py-3 mb-3 rounded-xl font-bold flex items-center justify-center gap-2 border transition-colors ${wishlisted ? "border-red-200 bg-red-50 text-red-600 dark:border-red-900 dark:bg-red-950/20" : "border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-zinc-800"}`}>
+                {isAdmin && (
+                  <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+                    Akun admin hanya untuk mengelola toko. Gunakan akun customer untuk wishlist, keranjang, dan checkout.
+                  </div>
+                )}
+                <button onClick={handleToggleWishlist} disabled={isAdmin} className={`w-full py-3 mb-3 rounded-xl font-bold flex items-center justify-center gap-2 border transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${wishlisted ? "border-red-200 bg-red-50 text-red-600 dark:border-red-900 dark:bg-red-950/20" : "border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-zinc-800"}`}>
                   <Heart className={`w-5 h-5 ${wishlisted ? "fill-current" : ""}`} /> {wishlisted ? "Hapus dari Wishlist" : "Simpan ke Wishlist"}
                 </button>
-                <button onClick={handleAddToCart} disabled={isAdding || stock < 1} className="w-full py-3.5 bg-black text-white dark:bg-white dark:text-black rounded-xl font-bold flex items-center justify-center gap-2 hover:scale-[1.02] transition-transform disabled:opacity-50 shadow-lg">
-                  {isAdding ? <Spinner /> : <ShoppingCart className="w-5 h-5" />} {stock < 1 ? "Stok Habis" : isAdding ? "Memproses..." : "Masukkan Keranjang"}
+                <button onClick={handleAddToCart} disabled={isAdmin || isAdding || stock < 1} className="w-full py-3.5 bg-black text-white dark:bg-white dark:text-black rounded-xl font-bold flex items-center justify-center gap-2 hover:scale-[1.02] transition-transform disabled:cursor-not-allowed disabled:opacity-50 shadow-lg">
+                  {isAdding ? <Spinner /> : <ShoppingCart className="w-5 h-5" />} {isAdmin ? "Khusus Akun Customer" : stock < 1 ? "Stok Habis" : isAdding ? "Memproses..." : "Masukkan Keranjang"}
                 </button>
               </div>
 

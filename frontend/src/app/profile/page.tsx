@@ -56,7 +56,11 @@ export default function ProfilePage() {
         phone: user.phone || "",
       });
     }
-    void fetchAddresses();
+    if (user?.role === "customer") {
+      void fetchAddresses();
+    } else {
+      setAddresses([]);
+    }
   }, [isAuthenticated, router, user]);
 
   const resetAddressForm = () => {
@@ -186,6 +190,7 @@ export default function ProfilePage() {
           )}
         </motion.div>
 
+        {user.role === "customer" && (
         <div className="glass rounded-2xl p-6">
           <div className="flex items-center justify-between mb-4 gap-4">
             <h3 className="text-lg font-bold flex items-center gap-2"><MapPin className="w-5 h-5 text-[var(--color-leaf-600)]" /> Alamat Tersimpan</h3>
@@ -226,9 +231,10 @@ export default function ProfilePage() {
             </div>
           )}
         </div>
+        )}
       </main>
 
-      {isAddressModalOpen && (
+      {user.role === "customer" && isAddressModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-5">

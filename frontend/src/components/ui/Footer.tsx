@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useAuthStore } from "@/store/useAuthStore";
 
 const footerLinks = {
   produk: [
@@ -24,6 +25,11 @@ const footerLinks = {
 };
 
 export default function Footer() {
+  const user = useAuthStore((s) => s.user);
+  const customerLinks = user?.role === "admin"
+    ? [{ label: "Admin Panel", href: "/admin" }, { label: "Profil Saya", href: "/profile" }]
+    : footerLinks.pelanggan;
+
   return (
     <footer className="border-t border-gray-200 dark:border-gray-800 bg-white/50 dark:bg-black/50 backdrop-blur-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -69,7 +75,7 @@ export default function Footer() {
               Pelanggan
             </h4>
             <ul className="space-y-2.5">
-              {footerLinks.pelanggan.map((link) => (
+              {customerLinks.map((link) => (
                 <li key={link.href}>
                   <Link
                     href={link.href}

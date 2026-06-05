@@ -143,6 +143,7 @@ export default function CheckoutPage() {
   const [formData, setFormData] = useState<CheckoutForm>(emptyForm);
   const router = useRouter();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const user = useAuthStore((s) => s.user);
 
   const cartItems = useMemo(() => cart?.items ?? [], [cart]);
   const checkoutItems = useMemo(
@@ -165,6 +166,10 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (!isAuthenticated) {
       router.push("/login");
+      return;
+    }
+    if (user?.role === "admin") {
+      setIsLoading(false);
       return;
     }
 
@@ -202,7 +207,7 @@ export default function CheckoutPage() {
     };
 
     void fetchData();
-  }, [isAuthenticated, router]);
+  }, [isAuthenticated, router, user?.role]);
 
   const selectedAddress = useMemo(
     () => addresses.find((address) => address.id === selectedAddressId) || null,
@@ -411,6 +416,13 @@ export default function CheckoutPage() {
 
         {isLoading ? (
           <CartSkeleton count={2} />
+        ) : user?.role === "admin" ? (
+          <div className="text-center py-20 glass rounded-3xl">
+            <Leaf className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold mb-2">Checkout khusus customer</h2>
+            <p className="text-gray-500 mb-8 max-w-xl mx-auto">Akun admin dipakai untuk mengelola operasional toko. Untuk simulasi atau transaksi pembelian, masuk menggunakan akun customer.</p>
+            <Link href="/admin" className="bg-black text-white dark:bg-white dark:text-black px-6 py-3 rounded-xl font-bold inline-flex items-center gap-2">Buka Admin Panel</Link>
+          </div>
         ) : checkoutItems.length === 0 ? (
           <div className="text-center py-20 glass rounded-3xl">
             <Leaf className="w-16 h-16 text-gray-300 mx-auto mb-4" />

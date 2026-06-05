@@ -75,6 +75,18 @@ func AdminMiddleware() gin.HandlerFunc {
 	}
 }
 
+func CustomerMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		role := c.GetString("userRole")
+		if role != "customer" {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Customer access required"})
+			return
+		}
+
+		c.Next()
+	}
+}
+
 func AdminIPAllowlist() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		raw := strings.TrimSpace(os.Getenv("ADMIN_IP_ALLOWLIST"))

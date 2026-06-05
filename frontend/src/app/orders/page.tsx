@@ -45,12 +45,16 @@ export default function OrdersPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState("");
   const [search, setSearch] = useState("");
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, user } = useAuthStore();
   const router = useRouter();
 
   useEffect(() => {
     if (!isAuthenticated) {
       router.push("/login");
+      return;
+    }
+    if (user?.role === "admin") {
+      setIsLoading(false);
       return;
     }
 
@@ -66,17 +70,17 @@ export default function OrdersPage() {
     };
 
     void fetchOrders();
-  }, [isAuthenticated, router]);
+  }, [isAuthenticated, router, user?.role]);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || user?.role === "admin") return;
     return onRealtimeEvent((event) => {
       if (!isOrderRefreshEvent(event)) return;
       void api.get("/orders").then((response) => {
         setOrders(response.data.data || []);
       }).catch(() => undefined);
     });
-  }, [isAuthenticated]);
+  }, [isAuthenticated, user?.role]);
 
   const filteredOrders = orders.filter((order) => {
     if (filterStatus && order.status !== filterStatus) return false;
@@ -107,6 +111,12 @@ export default function OrdersPage() {
                 <SummaryCardSkeleton />
                 <SummaryCardSkeleton />
               </>
+            ) : user?.role === "admin" ? (
+              <>
+                <SummaryCard label="Role Aktif" value="Admin" />
+                <SummaryCard label="Area Belanja" value="Customer" tone="amber" />
+                <SummaryCard label="Akses Admin" value="Aktif" tone="brand" />
+              </>
             ) : (
               <>
                 <SummaryCard label="Total Pesanan" value={orders.length} />
@@ -116,6 +126,7 @@ export default function OrdersPage() {
             )}
           </div>
 
+          {user?.role !== "admin" && (
           <div className="flex flex-col lg:flex-row gap-3 lg:items-center lg:justify-between">
             <div className="relative w-full lg:max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -129,10 +140,18 @@ export default function OrdersPage() {
               ))}
             </div>
           </div>
+          )}
         </div>
 
         {isLoading ? (
           <OrderListSkeleton />
+        ) : user?.role === "admin" ? (
+          <div className="text-center py-20 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-zinc-900">
+            <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold mb-2">Pesanan customer dipisahkan dari admin</h2>
+            <p className="text-gray-500 mb-6 max-w-xl mx-auto">Akun admin mengelola semua pesanan melalui dashboard admin. Untuk riwayat pembelian pribadi, gunakan akun customer.</p>
+            <Link href="/admin/orders" className="bg-black text-white dark:bg-white dark:text-black px-6 py-3 rounded-xl font-bold text-sm">Buka Manajemen Pesanan</Link>
+          </div>
         ) : orders.length === 0 ? (
           <div className="text-center py-20 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-zinc-900">
             <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
@@ -152,7 +171,7 @@ export default function OrdersPage() {
           </div>
         )}
 
-        {!isLoading && orders.length > 0 && (
+        {!isLoading && user?.role !== "admin" && orders.length > 0 && (
           <div className="mt-8 flex items-center justify-center gap-2 text-sm text-gray-500">
             <RotateCcw className="w-4 h-4" /> Menampilkan {filteredOrders.length} dari {orders.length} pesanan. Riwayat terbaru ada di paling atas.
           </div>
@@ -172,7 +191,7 @@ function SummaryCardSkeleton() {
   );
 }
 
-function SummaryCard({ label, value, tone }: { label: string; value: number; tone?: "brand" | "amber" }) {
+function SummaryCard({ label, value, tone }: { label: string; value: number | string; tone?: "brand" | "amber" }) {
   const valueColor = tone === "brand" ? "text-[var(--color-brand-600)]" : tone === "amber" ? "text-amber-600" : "";
   return (
     <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-zinc-900 p-4">

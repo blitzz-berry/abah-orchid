@@ -15,6 +15,7 @@ import type { WishlistItem } from "@/types";
 export default function WishlistPage() {
   const router = useRouter();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const user = useAuthStore((s) => s.user);
   const [items, setItems] = useState<WishlistItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [addingProductId, setAddingProductId] = useState<string | null>(null);
@@ -23,6 +24,10 @@ export default function WishlistPage() {
   useEffect(() => {
     if (!isAuthenticated) {
       router.push("/login");
+      return;
+    }
+    if (user?.role === "admin") {
+      setIsLoading(false);
       return;
     }
 
@@ -36,7 +41,7 @@ export default function WishlistPage() {
     };
 
     void fetchWishlist();
-  }, [isAuthenticated, router]);
+  }, [isAuthenticated, router, user?.role]);
 
   const handleRemove = async (productID: string) => {
     try {
@@ -72,6 +77,13 @@ export default function WishlistPage() {
         <h1 className="text-3xl font-extrabold tracking-tight mb-8">Wishlist Saya</h1>
         {isLoading ? (
           <ProductGridSkeleton count={4} />
+        ) : user?.role === "admin" ? (
+          <div className="text-center py-20 glass rounded-3xl">
+            <Heart className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold mb-2">Wishlist khusus customer</h2>
+            <p className="text-gray-500 mb-8 max-w-xl mx-auto">Akun admin dipisahkan dari aktivitas belanja agar pengelolaan toko dan data transaksi tetap bersih.</p>
+            <Link href="/admin" className="bg-black text-white dark:bg-white dark:text-black px-6 py-3 rounded-xl font-bold inline-flex items-center gap-2">Buka Admin Panel</Link>
+          </div>
         ) : items.length === 0 ? (
           <div className="text-center py-20 glass rounded-3xl">
             <Heart className="w-16 h-16 text-gray-300 mx-auto mb-4" />

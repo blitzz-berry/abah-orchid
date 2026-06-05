@@ -321,12 +321,14 @@ export default function Navbar() {
               </div>
             )}
 
-            <Link
-              href="/cart"
-              className="p-2.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl transition-colors relative"
-            >
-              <ShoppingBag className="w-5 h-5" />
-            </Link>
+            {user?.role !== "admin" && (
+              <Link
+                href="/cart"
+                className="p-2.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl transition-colors relative"
+              >
+                <ShoppingBag className="w-5 h-5" />
+              </Link>
+            )}
 
             {isAuthenticated ? (
               <div className="hidden md:flex items-center gap-2">
@@ -344,14 +346,16 @@ export default function Navbar() {
                     <ClipboardList className="w-5 h-5" />
                   </Link>
                 )}
-                <Link
-                  href="/wishlist"
-                  className="p-2.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl transition-colors relative"
-                  title="Wishlist"
-                  aria-label="Wishlist"
-                >
-                  <Heart className="w-5 h-5" />
-                </Link>
+                {user?.role !== "admin" && (
+                  <Link
+                    href="/wishlist"
+                    className="p-2.5 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl transition-colors relative"
+                    title="Wishlist"
+                    aria-label="Wishlist"
+                  >
+                    <Heart className="w-5 h-5" />
+                  </Link>
+                )}
                 <Link
                   href="/profile"
                   className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
@@ -430,13 +434,15 @@ export default function Navbar() {
                       Admin Panel
                     </Link>
                   )}
-                  <Link
-                    href="/wishlist"
-                    onClick={() => setMobileOpen(false)}
-                    className="px-4 py-3 rounded-xl text-sm font-medium hover:bg-black/5 dark:hover:bg-white/5 flex items-center gap-2"
-                  >
-                    <Heart className="w-4 h-4" /> Wishlist
-                  </Link>
+                  {user?.role !== "admin" && (
+                    <Link
+                      href="/wishlist"
+                      onClick={() => setMobileOpen(false)}
+                      className="px-4 py-3 rounded-xl text-sm font-medium hover:bg-black/5 dark:hover:bg-white/5 flex items-center gap-2"
+                    >
+                      <Heart className="w-4 h-4" /> Wishlist
+                    </Link>
+                  )}
                   {user?.role !== "admin" && (
                     <Link
                       href="/orders"
@@ -457,15 +463,17 @@ export default function Navbar() {
                   >
                     <User className="w-4 h-4" /> Profil Saya
                   </Link>
-                  <button
-                    onClick={() => {
-                      setMobileOpen(false);
-                      setNotificationOpen((open) => !open);
-                    }}
-                    className="px-4 py-3 rounded-xl text-sm font-medium hover:bg-black/5 dark:hover:bg-white/5 flex items-center gap-2 text-left"
-                  >
-                    <Bell className="w-4 h-4" /> Notifikasi {unreadCount > 0 ? `(${unreadCount})` : ""}
-                  </button>
+                  {user?.role !== "admin" && (
+                    <button
+                      onClick={() => {
+                        setMobileOpen(false);
+                        setNotificationOpen((open) => !open);
+                      }}
+                      className="px-4 py-3 rounded-xl text-sm font-medium hover:bg-black/5 dark:hover:bg-white/5 flex items-center gap-2 text-left"
+                    >
+                      <Bell className="w-4 h-4" /> Notifikasi {unreadCount > 0 ? `(${unreadCount})` : ""}
+                    </button>
+                  )}
                   <button
                     onClick={() => {
                       logout();
