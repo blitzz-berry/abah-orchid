@@ -82,6 +82,11 @@ export interface Product {
   care_tips?: string;
   tags?: string[];
   status: 'active' | 'inactive' | 'draft';
+  
+  discounted_price?: number;
+  is_discounted?: boolean;
+  discount_label?: string;
+
   images?: ProductImage[];
   inventory?: Inventory;
   created_at?: string;

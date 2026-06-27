@@ -14,9 +14,10 @@ import {
   ChevronRight,
   Menu,
   X,
-  Bell,
   CheckCheck,
   BarChart3,
+  Megaphone,
+  Bell,
 } from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useEffect, useRef, useState } from "react";
@@ -32,6 +33,7 @@ const sidebarLinks = [
   { href: "/admin/orders", label: "Pesanan", icon: ShoppingCart },
   { href: "/admin/inventory", label: "Inventori", icon: Warehouse },
   { href: "/admin/reports", label: "Laporan", icon: BarChart3 },
+  { href: "/admin/campaigns", label: "Promosi & Campaign", icon: Megaphone },
   { href: "/admin/coupons", label: "Kupon", icon: TicketPercent },
   { href: "/admin/customers", label: "Pelanggan", icon: Users },
 ];

@@ -80,6 +80,7 @@ func InitDB() {
 		&model.Coupon{},
 		&model.Notification{},
 		&model.AdminActivityLog{},
+		&model.Promotion{},
 	)
 
 	if err != nil {

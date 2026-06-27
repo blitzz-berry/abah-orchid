@@ -239,8 +239,20 @@ function CatalogPageContent() {
                     <div className="text-xs text-gray-500 mb-1">{product.category?.name || "Anggrek"}</div>
                     <h3 className="font-bold text-sm leading-tight mb-2 flex-1 line-clamp-2">{product.name}</h3>
                     <div className="flex items-end justify-between mt-auto">
-                      <div className="text-[var(--color-brand-600)] font-extrabold">Rp {product.price.toLocaleString("id-ID")}</div>
-                      <div className="text-xs text-gray-400">{product.inventory?.quantity || 0} stok</div>
+                      <div className="flex flex-col">
+                        {product.is_discounted && product.discounted_price ? (
+                          <>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[var(--color-brand-600)] font-extrabold">Rp {product.discounted_price.toLocaleString("id-ID")}</span>
+                              <span className="text-[0.65rem] text-red-500 font-bold px-1.5 py-0.5 bg-red-100 rounded">{product.discount_label || 'Promo'}</span>
+                            </div>
+                            <span className="text-[0.7rem] text-gray-400 line-through">Rp {product.price.toLocaleString("id-ID")}</span>
+                          </>
+                        ) : (
+                          <span className="text-[var(--color-brand-600)] font-extrabold">Rp {product.price.toLocaleString("id-ID")}</span>
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-400 mb-1">{product.inventory?.quantity || 0} stok</div>
                     </div>
                   </div>
                 </Link>

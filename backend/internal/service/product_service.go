@@ -7,6 +7,7 @@ import (
 	"orchidmart-backend/internal/model"
 	"orchidmart-backend/internal/pkg/appcache"
 	"orchidmart-backend/internal/repository"
+	"strings"
 	"time"
 )
 
@@ -26,6 +27,7 @@ type ProductService interface {
 
 type productService struct {
 	productRepo repository.ProductRepository
+	promoSvc    PromotionService
 	cache       appcache.Store
 }
 
@@ -34,12 +36,12 @@ type cachedProductList struct {
 	Total    int64           `json:"total"`
 }
 
-func NewProductService(productRepo repository.ProductRepository, stores ...appcache.Store) ProductService {
+func NewProductService(productRepo repository.ProductRepository, promoSvc PromotionService, stores ...appcache.Store) ProductService {
 	store := appcache.Disabled()
 	if len(stores) > 0 && stores[0] != nil {
 		store = stores[0]
 	}
-	return &productService{productRepo: productRepo, cache: store}
+	return &productService{productRepo: productRepo, promoSvc: promoSvc, cache: store}
 }
 
 func (s *productService) GetAllProducts(query repository.ProductQuery) ([]model.Product, int64, error) {
@@ -53,6 +55,7 @@ func (s *productService) GetAllProducts(query repository.ProductQuery) ([]model.
 	}
 	products, total, err := s.productRepo.FindAll(query)
 	if err == nil {
+		s.applyPromotions(products)
 		s.cache.SetJSON(key, cachedProductList{Products: products, Total: total}, 2*time.Minute)
 	}
 	return products, total, err
@@ -69,6 +72,7 @@ func (s *productService) GetProductByID(id string, includeInactive bool) (*model
 	}
 	product, err := s.productRepo.FindByID(id, false)
 	if err == nil && product != nil {
+		s.applyPromotions([]model.Product{*product})
 		s.cache.SetJSON(key, product, 2*time.Minute)
 	}
 	return product, err
@@ -142,4 +146,26 @@ func (s *productService) invalidateCatalog() {
 func productListCacheKey(query repository.ProductQuery) string {
 	raw, _ := json.Marshal(query)
 	return fmt.Sprintf("%sproducts:%x", appcache.CatalogPrefix, sha256.Sum256(raw))
+}
+
+func (s *productService) applyPromotions(products []model.Product) {
+	promos, err := s.promoSvc.GetActivePromotions()
+	if err != nil || len(promos) == 0 {
+		return
+	}
+	now := time.Now().Weekday().String()
+	for i := range products {
+		for _, p := range promos {
+			if p.RuleType == "DAY_OF_WEEK" && strings.EqualFold(p.RuleValue, now) {
+				products[i].IsDiscounted = true
+				if p.DiscountType == "PERCENTAGE" {
+					products[i].DiscountedPrice = products[i].Price * (100 - p.DiscountValue) / 100
+				} else {
+					products[i].DiscountedPrice = products[i].Price - p.DiscountValue
+				}
+				products[i].DiscountLabel = p.Name
+				break
+			}
+		}
+	}
 }

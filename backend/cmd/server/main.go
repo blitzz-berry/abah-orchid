@@ -64,8 +64,11 @@ func main() {
 	authSvc := service.NewAuthService(userRepo)
 	authHandler := handler.NewAuthHandler(authSvc)
 
+	promotionSvc := service.NewPromotionService(config.DB)
+	promotionHandler := handler.NewPromotionHandler(promotionSvc)
+
 	productRepo := repository.NewProductRepository(config.DB)
-	productSvc := service.NewProductService(productRepo, dataCache)
+	productSvc := service.NewProductService(productRepo, promotionSvc, dataCache)
 	productHandler := handler.NewProductHandler(productSvc)
 
 	cartRepo := repository.NewCartRepository(config.DB)
@@ -73,7 +76,7 @@ func main() {
 	cartHandler := handler.NewCartHandler(cartSvc)
 
 	orderRepo := repository.NewOrderRepository(config.DB)
-	orderSvc := service.NewRealtimeOrderServiceWithDB(orderRepo, cartRepo, config.DB, eventHub, dataCache)
+	orderSvc := service.NewRealtimeOrderServiceWithDB(orderRepo, cartRepo, config.DB, promotionSvc, eventHub, dataCache)
 	orderHandler := handler.NewRealtimeOrderHandler(orderSvc, config.DB, eventHub)
 	uploadHandler := handler.NewUploadHandler(config.DB, orderSvc, dataCache)
 	reviewRepo := repository.NewReviewRepository(config.DB)
@@ -286,6 +289,11 @@ func main() {
 			adminRoutes.PUT("/coupons/:id", middleware.RequireAdminStepUp("update_coupon"), adminHandler.UpdateCoupon)
 			adminRoutes.DELETE("/coupons/:id", middleware.RequireAdminStepUp("delete_coupon"), adminHandler.DeleteCoupon)
 			adminRoutes.POST("/coupons/preview", middleware.RateLimit(60, time.Minute), adminHandler.PreviewCoupon)
+
+			adminRoutes.GET("/promotions", promotionHandler.GetAllPromotions)
+			adminRoutes.POST("/promotions", middleware.RequireAdminStepUp("create_promotion"), promotionHandler.CreatePromotion)
+			adminRoutes.PUT("/promotions/:id/toggle", middleware.RequireAdminStepUp("update_promotion"), promotionHandler.TogglePromotionStatus)
+			adminRoutes.DELETE("/promotions/:id", middleware.RequireAdminStepUp("delete_promotion"), promotionHandler.DeletePromotion)
 		}
 
 		wishlistRoutes := api.Group("/wishlist", middleware.AuthMiddleware(), middleware.CustomerMiddleware())

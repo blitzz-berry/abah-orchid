@@ -40,6 +40,11 @@ type Product struct {
 	CareTips      string         `gorm:"type:text" json:"care_tips"`
 	Tags          string         `gorm:"type:text" json:"tags"` // JSON string or comma separated
 	Status        string         `gorm:"type:varchar(20);default:'active'" json:"status"`
+	
+	DiscountedPrice float64        `gorm:"-" json:"discounted_price,omitempty"`
+	IsDiscounted    bool           `gorm:"-" json:"is_discounted,omitempty"`
+	DiscountLabel   string         `gorm:"-" json:"discount_label,omitempty"`
+
 	CreatedAt     time.Time      `json:"created_at"`
 	UpdatedAt     time.Time      `json:"updated_at"`
 	DeletedAt     gorm.DeletedAt `gorm:"index" json:"-"`

@@ -1,0 +1,137 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - navigation [ref=e3]:
+      - generic [ref=e5]:
+        - link "Logo AbahOrchid" [ref=e6] [cursor=pointer]:
+          - /url: /
+          - img "Logo" [ref=e7]
+          - generic [ref=e8]: AbahOrchid
+        - generic [ref=e11]:
+          - link [ref=e12] [cursor=pointer]:
+            - /url: /cart
+            - img [ref=e13]
+          - button [active] [ref=e209]:
+            - img [ref=e226]
+      - generic [ref=e230]:
+        - link "Katalog" [ref=e231] [cursor=pointer]:
+          - /url: /products
+        - link "Masuk" [ref=e232] [cursor=pointer]:
+          - /url: /login
+    - main [ref=e17]:
+      - generic [ref=e18]:
+        - generic [ref=e20]:
+          - generic [ref=e21]: "🌟 Platform E-Commerce Anggrek #1 di Indonesia"
+          - heading "Koleksi Anggrek Premium Untuk Koleksi & Bisnis" [level=1] [ref=e22]:
+            - text: Koleksi Anggrek Premium
+            - text: Untuk Koleksi & Bisnis
+          - paragraph [ref=e23]: Temukan berbagai varietas anggrek langka, bibit unggul, hingga tanaman berbunga siap panen.
+          - link "Mulai Belanja" [ref=e25] [cursor=pointer]:
+            - /url: /products
+            - text: Mulai Belanja
+            - img [ref=e26]
+        - generic [ref=e28]:
+          - generic [ref=e29]:
+            - img [ref=e31]
+            - heading "Varietas Terlengkap" [level=3] [ref=e34]
+            - paragraph [ref=e35]: Dari Phalaenopsis hingga Vanda langka
+          - generic [ref=e36]:
+            - img [ref=e38]
+            - heading "Packing Aman" [level=3] [ref=e41]
+            - paragraph [ref=e42]: Packing premium & asuransi tanaman
+          - generic [ref=e43]:
+            - img [ref=e45]
+            - heading "Pengiriman Terjaga" [level=3] [ref=e50]
+            - paragraph [ref=e51]: Tanaman disiapkan dengan perlindungan yang tepat
+      - generic [ref=e52]:
+        - generic [ref=e53]:
+          - generic [ref=e54]:
+            - heading "Produk Terbaru" [level=2] [ref=e55]
+            - paragraph [ref=e56]: Koleksi anggrek yang baru ditambahkan
+          - link "Lihat Semua" [ref=e57] [cursor=pointer]:
+            - /url: /products
+            - text: Lihat Semua
+            - img [ref=e58]
+        - generic [ref=e211]:
+          - img [ref=e212]
+          - paragraph [ref=e215]: Belum ada produk. Segera hadir!
+      - generic [ref=e134]:
+        - generic [ref=e135]:
+          - img [ref=e137]
+          - generic [ref=e142]:
+            - heading "Pengiriman Aman" [level=4] [ref=e143]
+            - paragraph [ref=e144]: Packing khusus tanaman hidup
+        - generic [ref=e145]:
+          - img [ref=e147]
+          - generic [ref=e150]:
+            - heading "Garansi Tumbuh" [level=4] [ref=e151]
+            - paragraph [ref=e152]: Claim dengan bukti unboxing video
+        - generic [ref=e153]:
+          - img [ref=e155]
+          - generic [ref=e157]:
+            - heading "Kualitas Terjamin" [level=4] [ref=e158]
+            - paragraph [ref=e159]: Langsung dari nursery terpercaya
+    - contentinfo [ref=e160]:
+      - generic [ref=e161]:
+        - generic [ref=e162]:
+          - generic [ref=e163]:
+            - link "Logo AbahOrchid" [ref=e164] [cursor=pointer]:
+              - /url: /
+              - img "Logo" [ref=e165]
+              - generic [ref=e166]: AbahOrchid
+            - paragraph [ref=e167]: "Platform e-commerce khusus anggrek #1 di Indonesia. Koleksi premium untuk hobbyist & bisnis."
+            - generic [ref=e168]:
+              - generic [ref=e169]: 🌿 100% Tanaman Asli
+              - generic [ref=e170]: 📦 Packing Aman
+          - generic [ref=e171]:
+            - heading "Produk" [level=4] [ref=e172]
+            - list [ref=e173]:
+              - listitem [ref=e174]:
+                - link "Katalog Anggrek" [ref=e175] [cursor=pointer]:
+                  - /url: /products
+              - listitem [ref=e176]:
+                - link "Phalaenopsis" [ref=e177] [cursor=pointer]:
+                  - /url: /products?category=phalaenopsis
+              - listitem [ref=e178]:
+                - link "Dendrobium" [ref=e179] [cursor=pointer]:
+                  - /url: /products?category=dendrobium
+              - listitem [ref=e180]:
+                - link "Vanda" [ref=e181] [cursor=pointer]:
+                  - /url: /products?category=vanda
+              - listitem [ref=e182]:
+                - link "Cattleya" [ref=e183] [cursor=pointer]:
+                  - /url: /products?category=cattleya
+          - generic [ref=e184]:
+            - heading "Pelanggan" [level=4] [ref=e185]
+            - list [ref=e186]:
+              - listitem [ref=e187]:
+                - link "Akun Saya" [ref=e188] [cursor=pointer]:
+                  - /url: /profile
+              - listitem [ref=e189]:
+                - link "Pesanan Saya" [ref=e190] [cursor=pointer]:
+                  - /url: /orders
+              - listitem [ref=e191]:
+                - link "Keranjang" [ref=e192] [cursor=pointer]:
+                  - /url: /cart
+          - generic [ref=e193]:
+            - heading "Informasi" [level=4] [ref=e194]
+            - list [ref=e195]:
+              - listitem [ref=e196]:
+                - link "Tentang Kami" [ref=e197] [cursor=pointer]:
+                  - /url: "#"
+              - listitem [ref=e198]:
+                - link "Kebijakan Privasi" [ref=e199] [cursor=pointer]:
+                  - /url: "#"
+              - listitem [ref=e200]:
+                - link "Syarat & Ketentuan" [ref=e201] [cursor=pointer]:
+                  - /url: "#"
+              - listitem [ref=e202]:
+                - link "Kontak" [ref=e203] [cursor=pointer]:
+                  - /url: "#"
+        - generic [ref=e204]:
+          - paragraph [ref=e205]: © 2026 AbahOrchid. All rights reserved.
+          - generic [ref=e206]:
+            - generic [ref=e207]: 💳 Midtrans Payment
+            - generic [ref=e208]: 🚚 JNE • J&T • SiCepat
+  - button "Open Next.js Dev Tools" [ref=e221] [cursor=pointer]:
+    - img [ref=e222]
+  - alert [ref=e225]

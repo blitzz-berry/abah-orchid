@@ -57,6 +57,7 @@ type orderService struct {
 	orderRepo repository.OrderRepository
 	cartRepo  repository.CartRepository
 	db        *gorm.DB
+	promoSvc  PromotionService
 	cache     appcache.Store
 	events    OrderEventPublisher
 }
@@ -65,12 +66,12 @@ func NewOrderService(orderRepo repository.OrderRepository, cartRepo repository.C
 	return &orderService{orderRepo: orderRepo, cartRepo: cartRepo, cache: optionalCache(stores)}
 }
 
-func NewOrderServiceWithDB(orderRepo repository.OrderRepository, cartRepo repository.CartRepository, db *gorm.DB, stores ...appcache.Store) OrderService {
-	return &orderService{orderRepo: orderRepo, cartRepo: cartRepo, db: db, cache: optionalCache(stores)}
+func NewOrderServiceWithDB(orderRepo repository.OrderRepository, cartRepo repository.CartRepository, db *gorm.DB, promoSvc PromotionService, stores ...appcache.Store) OrderService {
+	return &orderService{orderRepo: orderRepo, cartRepo: cartRepo, db: db, promoSvc: promoSvc, cache: optionalCache(stores)}
 }
 
-func NewRealtimeOrderServiceWithDB(orderRepo repository.OrderRepository, cartRepo repository.CartRepository, db *gorm.DB, events OrderEventPublisher, stores ...appcache.Store) OrderService {
-	return &orderService{orderRepo: orderRepo, cartRepo: cartRepo, db: db, cache: optionalCache(stores), events: events}
+func NewRealtimeOrderServiceWithDB(orderRepo repository.OrderRepository, cartRepo repository.CartRepository, db *gorm.DB, promoSvc PromotionService, events OrderEventPublisher, stores ...appcache.Store) OrderService {
+	return &orderService{orderRepo: orderRepo, cartRepo: cartRepo, db: db, promoSvc: promoSvc, cache: optionalCache(stores), events: events}
 }
 
 func (s *orderService) Checkout(userID string, req request.CheckoutRequest) (*model.Order, string, error) {
@@ -84,13 +85,37 @@ func (s *orderService) Checkout(userID string, req request.CheckoutRequest) (*mo
 	var orderItems []model.OrderItem
 	selectedItemIDs := normalizeIDSet(req.CartItemIDs)
 
+	// Check active promotions for Friday Flash Sale
+	var activePromo *model.Promotion
+	if s.promoSvc != nil {
+		if promos, err := s.promoSvc.GetActivePromotions(); err == nil {
+			now := time.Now().Weekday().String()
+			for _, p := range promos {
+				if p.RuleType == "DAY_OF_WEEK" && strings.EqualFold(p.RuleValue, now) {
+					activePromo = &p
+					break
+				}
+			}
+		}
+	}
+
 	for _, item := range cart.Items {
 		if len(selectedItemIDs) > 0 {
 			if _, ok := selectedItemIDs[item.ID.String()]; !ok {
 				continue
 			}
 		}
-		itemSubtotal := item.Product.Price * float64(item.Quantity)
+		
+		itemPrice := item.Product.Price
+		if activePromo != nil {
+			if activePromo.DiscountType == "PERCENTAGE" {
+				itemPrice = itemPrice * (100 - activePromo.DiscountValue) / 100
+			} else {
+				itemPrice = itemPrice - activePromo.DiscountValue
+			}
+		}
+
+		itemSubtotal := itemPrice * float64(item.Quantity)
 		subtotal += itemSubtotal
 		if item.Product.WeightGram > 0 {
 			totalWeightGram += item.Product.WeightGram * item.Quantity
@@ -100,7 +125,7 @@ func (s *orderService) Checkout(userID string, req request.CheckoutRequest) (*mo
 			ProductID:       item.ProductID,
 			ProductName:     item.Product.Name,
 			ProductImageURL: primaryProductImageURL(item.Product.Images),
-			ProductPrice:    item.Product.Price,
+			ProductPrice:    itemPrice,
 			UnitType:        item.Product.UnitType,
 			Quantity:        item.Quantity,
 			Subtotal:        itemSubtotal,
